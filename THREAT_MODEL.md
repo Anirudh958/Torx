@@ -74,6 +74,24 @@ log.
 
 ## 3. Adversaries
 
+Organized twice, because the two organizations answer different questions.
+First by **property**: which adversary threatens each claim, how the claim is
+proven, and which harness rows will hold the proof. Then by **capability**
+(A1–A7 below): what each adversary is, with the legacy measurement attached.
+
+| Property | Violator(s) | Proof obligation | Planned row family | v0.1.0-legacy |
+|---|---|---|---|---|
+| **P1 — cannot be disabled.** The rules cannot be flushed, the BPF attach cannot be dropped, the namespace cannot be exited. | A4 (hostile app — arbitrary code inside the wrapped process), A2 (local unprivileged). A5 excluded by fiat (§6): root disables everything, including designs that admit otherwise. | **Attempted removal must fail.** From inside, as the wrapped uid: `nft flush ruleset`, BPF detach, `setns` back to the host — each must return `EPERM`. Complemented by ordering: the launcher installs the rules *before* `exec`, and §4.1 aborts the launch if they don't apply — an enforcer that never installed cannot be said to have been disabled. | `disable.nft_flush`, `disable.bpf_detach`, `disable.exit_netns` | **Fails by construction** — the enforcer lived inside the process it constrained (A4): the constrained party was the enforcing party. |
+| **P2 — cannot be blinded on covered paths.** Traffic on a covered path cannot be emitted in a way the enforcement layer misses, and the covered set is enumerated, not assumed. | A4 alone: raw syscalls, static binaries, io_uring, IPv6, UDP, DNS are attempts to make *covered* traffic invisible. A2 cannot attempt this — the routes are not its to manipulate. | **Inverted rows:** each row attempts an escape through one path class and passes only if blocked. The hard obligation is the enumeration itself — the set of path classes must be justified (every route the kernel can take for this traffic), because a path outside the set is a blind spot by definition. What the enumeration cannot close becomes the residue, and residue is what detection documents. | `coverage.completeness.{tcp,udp,raw,ipv6,unix,dns,io_uring}` | **Fails, measured** — coverage was the shim's exported hooks, so blind spots were reachable: 6 of the 9 REFUTED rows are coverage failures (`dns`, `ipv6`, `static`, `direct-syscall`, `udp` ×2), the other 3 are a covered path still corrupted (`udp-correctness`). |
+| **P3 — cannot be signaled by.** The wrapped application has no channel to the observer except generating the events the observer reads: it cannot reach it, feed it, or silence it by input. | A4 (kill/signals, inherited fds, crafted inputs), A7 (ptrace of the *observer* — not the wrapped process), A2 (same-host, different uid — sufficient only if a shared channel exists, which is what the proof removes). | **By design, structurally asserted.** No shared fds (CLOEXEC audit), observer outside the application's netns (no IPC path exists), observer not traceable by the wrapped uid. Static rows assert each structural fact; none of them proves a negative alone — the design argument carries the claim, the rows make it falsifiable. | `signal.no_shared_fds`, `signal.observer_unreachable` | **Fails** — the observer's only input was the app's own control flow, so the app chose what was signaled: a raw syscall produces `shim_trace_count: 0`, the enforcer's silence read as evidence. |
+
+*Row families are targets, not measurements. The Phase-2 harness that will
+hold them is built after the primitive (§7 sequence, code last); an ID that
+changes before that harness lands changes here first.*
+
+The same adversaries, organized by what they are capable of, with the legacy
+measurement attached:
+
 ### A1 — Passive network observer
 **Capability:** sees all traffic leaving the origin host (ISP, local network,
 upstream). Cannot modify it.
