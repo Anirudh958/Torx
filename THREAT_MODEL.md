@@ -217,7 +217,7 @@ Stated plainly, because a threat model that only lists wins is marketing:
 3. **The correct architecture** — netns + cgroup BPF + nftables.
 4. **Evaluation** — leak rate (legacy vs. `torsocks` vs. netns), latency,
    isolation.
-5. **Detection** — how a defender sees all three (planned: `DETECTION.md`).
+5. **Detection** — how a defender sees all three ([`DETECTION.md`](DETECTION.md)).
 
 The rigor of a sophisticated adversary, in service of a reproducible claim:
 fail-closed where an adversary would fail-silent, auditable where an adversary

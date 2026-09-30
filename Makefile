@@ -129,7 +129,7 @@ uninstall:
 dist: check
 	@echo ">> building $(TARBALL)"
 	@rm -rf dist && mkdir -p dist/torx-$(VERSION)
-	@for f in $(SRC) $(HDR) Makefile README.md THREAT_MODEL.md LIMITATIONS.md; do \
+	@for f in $(SRC) $(HDR) Makefile README.md THREAT_MODEL.md LIMITATIONS.md DETECTION.md SECURITY.md; do \
 		[ -f "$$f" ] && cp -v "$$f" dist/torx-$(VERSION)/ || true; \
 	done
 	@[ -d bin ] && cp -rv bin dist/torx-$(VERSION)/ || true
