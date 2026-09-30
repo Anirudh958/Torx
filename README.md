@@ -15,6 +15,7 @@ is built around proving that claim mechanically, not asserting it.
 | [`LIMITATIONS.md`](LIMITATIONS.md) | every known failure, each one backed by a recorded test row |
 | [`DETECTION.md`](DETECTION.md) | defender-side rules per leak class, each citing the row that validates it |
 | [`SECURITY.md`](SECURITY.md) | findings policy — what is a bug here, what is the thesis |
+| [`docs/why-not-torsocks.md`](docs/why-not-torsocks.md) | why the mature shim is still the wrong primitive — the two lineages (libc interposition vs. netns/nftables), credited fairly |
 | [`tests/leak/README.md`](tests/leak/README.md) | the leak-taxonomy harness: modes, schema, CI gate semantics |
 | [`docs/build-notes.md`](docs/build-notes.md) | how to build it and the gotchas that produced the current Makefile |
 
