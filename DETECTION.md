@@ -164,22 +164,27 @@ the rule its `stable` status.
 
 The corruption class (`udp-correctness`) has no wire signal at all.
 What the application can observe after the swap, **measured** by the
-harness (`udp.fd_swap` evidence, `udp.connect_hijack` evidence):
+harness (`udp.silent_misdelivery` evidence, `udp.fd_swap` evidence):
 
 | Observation | Value | Meaning |
 |---|---|---|
 | `so_type` after live swap | `1` | fd became `SOCK_STREAM` — `dup2` over a TCP socket. |
 | `post_swap_send_rc` / `_errno` | `1` / `0` | `send()` **succeeds** — payload rides the Tor stream. |
 | `post_swap_sendto_rc` / `_errno` | `1` / `0` | different destination **silently ignored**, not `EISCONN`. |
+| `misdelivery` | `true` | `sendto(B)` succeeded while the payload rides A's stream — **silent misdelivery**, the class of failure worse than a crash: a crash is detectable, this is not. |
+| `peer_after_swap` | `127.0.0.1:9050` | `getpeername()` returns the **Tor SOCKS listener**, not the destination the app dialed — the second in-app tell. |
 | `post_swap_reconnect_rc` / `_errno` | `0` / `0` | second `connect()` "succeeds". |
-| `reroutes` (fd_swap) | `2` | the second `connect()` dialed a **fresh Tor stream** over the same fd. |
+| `reroutes` (fd_swap) | `2` | the second `connect()` dialed a **fresh Tor stream** over the same fd (stream identity changes; circuit identity across streams is Tor-policy-dependent and not client-observable — see LIMITATIONS.md §3). |
 
 **Correction to the original draft of this document:** it predicted the
 post-swap write would fail with `EPROTOTYPE` (or `EOPNOTSUPP`). It does
 not — measured on 2026-09-30 (this host, live Tor 0.4.9.11): **no errno
 is ever raised on any of these paths.** Errno-based detection is
-therefore refuted, not untested. The only in-app tell is
-`getsockopt(SO_TYPE)` (or reading `LD_PRELOAD` out of the environment).
+therefore refuted, not untested. The in-app tells are
+`getsockopt(SO_TYPE)` (or reading `LD_PRELOAD` out of the environment),
+and — for apps that check — `getpeername()`/`getsockname()` returning
+the loopback SOCKS peer instead of the intended destination. Nothing on
+the wire distinguishes this traffic from ordinary proxied TCP.
 
 **TORX-DET-udp2-1 (in-process canary)** — run it in your own code after
 your own `connect()`; this is exactly what `probe_udp` executes inside
@@ -190,6 +195,11 @@ int t = -1; socklen_t l = sizeof t;
 getsockopt(fd, SOL_SOCKET, SO_TYPE, &t, &l);
 if (t != SOCK_DGRAM)
         /* the fd you were handed is no longer the socket you created */;
+struct sockaddr_in p; socklen_t pl = sizeof p;
+if (getpeername(fd, (struct sockaddr *)&p, &pl) == 0 &&
+    ntohl(p.sin_addr.s_addr) == INADDR_LOOPBACK)
+        /* peer is the local SOCKS listener (127.0.0.1:9050), not the
+           destination you dialed — the bytes are going elsewhere */;
 ```
 
 `status: stable`, `Executed? = yes` (`run.sh` dynamic runs execute this
@@ -258,15 +268,23 @@ The absence cases — each is a committed row, not a hedge:
 
 ## 5. Cross-reference
 
-| Rule | Class | Status | Executed? | Validated by (row) |
-|---|---|---|---|---|
-| `TORX-DET-tcp-1` (Sigma) | tcp | stable | no — needs SIEM | `tcp.interception`, `tor.e2e`, `tcp.passthrough_*` |
-| `TORX-DET-tcp-2` (Suricata) | tcp | **experimental** | no — Suricata/Zeek absent | phenomenon: `tcp.interception` + `torx.c` |
-| `TORX-DET-dns-1` (nm check) | dns | stable | **yes** — `make check` / `--static` | `dns.export.getaddrinfo` |
-| `TORX-DET-dns-2` (correlation) | dns | stable | no — auditd absent | `dns.export.getaddrinfo` |
-| `TORX-DET-udp-1` (nm check) | udp | stable | **yes** — `make check` / `--static` | `udp.export.sendto` |
-| `TORX-DET-udp2-1` (in-process) | udp-correctness | stable | **yes** — executed by `run.sh` | `udp.fd_swap`, `udp.connect_hijack` |
-| `TORX-DET-ipv6-1` (auditd) | ipv6 | stable | no — auditd absent | `ipv6.passthrough` |
+| Rule | Class | Status | Executed? | Validated by | Evidence rows |
+|---|---|---|---|---|---|
+| `TORX-DET-tcp-1` (Sigma) | tcp | stable | no — needs SIEM | `row` | `tcp.interception`, `tor.e2e`, `tcp.passthrough_*` |
+| `TORX-DET-tcp-2` (Suricata) | tcp | **experimental** | no — Suricata/Zeek absent | `draft` | phenomenon: `tcp.interception` + `torx.c` |
+| `TORX-DET-dns-1` (nm check) | dns | stable | **yes** — `make check` / `--static` | `row` | `dns.export.getaddrinfo` |
+| `TORX-DET-dns-2` (correlation) | dns | stable | no — auditd absent | `row` | `dns.export.getaddrinfo` |
+| `TORX-DET-udp-1` (nm check) | udp | stable | **yes** — `make check` / `--static` | `row` | `udp.export.sendto` |
+| `TORX-DET-udp2-1` (in-process) | udp-correctness | stable | **yes** — executed by `run.sh` | `row` | `udp.fd_swap`, `udp.silent_misdelivery`, `udp.connect_hijack` |
+| `TORX-DET-ipv6-1` (auditd) | ipv6 | stable | no — auditd absent | `row` | `ipv6.passthrough` |
+
+`Validated by` is a machine-readable enum: **`row`** = a committed
+`results.jsonl` row re-checks this rule's claim on every harness run;
+**`draft`** = written and source-reviewed only, nothing mechanical ties
+it to the evidence (only `tcp-2`, because the SOCKS4a-on-the-wire claim
+has never been captured). `none` is reserved for a rule with no
+evidence trail at all — there are none. `Status` is the phenomenon,
+`Executed?` is the detector: the two stay separate on purpose.
 
 Anchors for the `limitation_ref`s cited above: `LIMITATIONS.md#1-dns`,
 `#2-ipv6`, `#3-tcp`, `#static`, `#raw-syscall`, `#udp`.
@@ -275,7 +293,7 @@ Anchors for the `limitation_ref`s cited above: `LIMITATIONS.md#1-dns`,
 
 ```bash
 make check                       # executes dns-1 and udp-1 (static checks)
-./tests/leak/run.sh              # full run: 16 rows, live-Tor rows degrade honestly
+./tests/leak/run.sh              # full run: 17 rows, live-Tor rows degrade honestly
 ./tests/leak/run.sh --static     # partial run: merges, never overwrites dynamic rows
 
 # the evidence table this document cites:

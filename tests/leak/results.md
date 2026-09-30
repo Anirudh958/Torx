@@ -1,7 +1,7 @@
 # TORX leak harness results
 
-- generated: `2026-09-30T15:48:50Z`
-- commit: `91da491`
+- generated: `2026-09-30T16:15:25Z`
+- commit: `9943efc`
 - mode: `both`
 - library: `libtorx.so`
 
@@ -21,6 +21,7 @@
 | `bypass.raw_syscall` | direct-syscall | dynamic | intercepted | **bypassed** | REFUTED | true |
 | `udp.connect_hijack` | udp-correctness | dynamic | passthrough_or_error | **hijack_attempted** | REFUTED | true |
 | `udp.fd_swap` | udp-correctness | dynamic | fd_unchanged | **fd_became_tcp** | REFUTED | false |
+| `udp.silent_misdelivery` | udp-correctness | dynamic | honored_or_refused | **misdelivered** | REFUTED | false |
 | `dns.dynamic.egress` | dns | dynamic | proxied_or_blocked | **not_run** | UNTESTED | false |
 | `tor.e2e` | tcp | dynamic | IsTor=true | **IsTor:true (3/3)** | VERIFIED | false |
 

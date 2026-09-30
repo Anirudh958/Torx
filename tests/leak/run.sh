@@ -192,7 +192,8 @@ evidence() {
 
 # degrade <id> <class> <description> <limitation_ref> <notes>
 degrade() {
-    record "$1" "$2" "$3" "dynamic" "see LIMITATIONS.md" "not_run" "UNTESTED" \
+    local method="${6:-dynamic}"
+    record "$1" "$2" "$3" "$method" "see LIMITATIONS.md" "not_run" "UNTESTED" \
         "$(jq -cn --arg r "$EGRESS_REASON" '{reason:$r}')" \
         "false" "$4" "$5" "UNTESTED"
 }
@@ -216,6 +217,9 @@ skip_all_dynamic() {
     degrade "udp.connect_hijack" "udp-correctness" "SOCK_DGRAM connect() must not become Tor TCP" \
         "LIMITATIONS.md#udp" "Correctness class: socket corruption, not payload disclosure."
     degrade "udp.fd_swap" "udp-correctness" "the UDP fd must not be swapped for a TCP socket" \
+        "LIMITATIONS.md#udp" "Needs a live Tor."
+    degrade "udp.silent_misdelivery" "udp-correctness" \
+        "sendto() on the swapped fd must fail or honour the address it was given" \
         "LIMITATIONS.md#udp" "Needs a live Tor."
     degrade "dns.dynamic.egress" "dns" "DNS must not egress outside Tor" \
         "LIMITATIONS.md#1-dns" "Static nm assertion is the CI gate for this class."
@@ -350,6 +354,8 @@ run_dynamic() {
         POST_RECONN_RC=$(sed -n 's/^reconnect: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\1/p' "$f" | head -1)
         POST_RECONN_ERRNO=$(sed -n 's/^reconnect: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\2/p' "$f" | head -1)
         POST_SO_TYPE_AFTER=$(sed -n 's/.*so_type_after=\([0-9]*\).*/\1/p' "$f" | head -1)
+        POST_PEER=$(sed -n 's/^peer: rc=0 errno=0 addr=\(.*\)/\1/p' "$f" | head -1)
+        POST_LOCAL=$(sed -n 's/^local: rc=0 errno=0 addr=\(.*\)/\1/p' "$f" | head -1)
         POST_REROUTES=$(grep -cF "$TRACE" "$f" 2>/dev/null)
         [ -n "$POST_REROUTES" ] || POST_REROUTES=0
     }
@@ -404,10 +410,52 @@ run_dynamic() {
             "false" "LIMITATIONS.md#udp" \
             "The corruption in its final form: connect() returned success while the fd became SOCK_STREAM — the app's datagram payload now rides a TCP stream, send()/sendto() still report success (address silently ignored), and a second connect() routes a fresh Tor stream over the same fd (reroutes=2). Correctness class, distinct from the udp leak class. Needs a live Tor, hence not a gate." \
             "REFUTED"
+
+        # --- silent misdelivery: bytes sent to B arrive on A's stream ------
+        # The finding, not the swap itself: sendto() SUCCEEDS with the
+        # destination silently dropped, and getpeername() tells the app
+        # where the data is really going (the Tor SOCKS listener).
+        local misdir=false obs evid expv
+        if [ -z "${POST_SENDTO_RC:-}" ]; then
+            obs=not_run; expv=UNTESTED
+            evid='{"reason":"probe exited before the post-swap measurements"}'
+        else
+            [ "${so_type:-}" = "1" ] && [ "$POST_SENDTO_RC" = "1" ] \
+                && [ "${POST_SENDTO_ERRNO:-}" = "0" ] && misdir=true
+            obs=$([ "$misdir" = true ] && echo misdelivered || echo honored_or_refused)
+            expv=REFUTED
+            evid=$(jq -cn --argjson misdir "$misdir" \
+                --argjson sendto_rc "${POST_SENDTO_RC:-null}" \
+                --argjson sendto_errno "${POST_SENDTO_ERRNO:-null}" \
+                --arg peer "${POST_PEER:-unknown}" \
+                --arg local_addr "${POST_LOCAL:-unknown}" \
+                --argjson reroutes "${POST_REROUTES:-0}" \
+                '{probe:"sendto(8.8.8.8:53) after the dup2 swap (first stream target: 1.1.1.1:53)",
+                  misdelivery:$misdir, addr_ignored:true,
+                  sendto_rc:$sendto_rc, sendto_errno:$sendto_errno,
+                  peer_after_swap:$peer, local_after_swap:$local_addr,
+                  peer_note:"peer is 127.0.0.1:9050 — the Tor SOCKS listener, not 8.8.8.8:53: the second in-app tell alongside SO_TYPE",
+                  reroutes:$reroutes,
+                  reroutes_note:"the second connect() opened a NEW SOCKS stream on the same fd; circuit identity across streams is Tor-policy-dependent and not observable client-side here (no control port), so this records stream identity only"}')
+        fi
+        if [ "$expv" = "UNTESTED" ]; then verdict=UNTESTED
+        else verdict=$(verdict_for honored_or_refused "$obs"); fi
+        record "udp.silent_misdelivery" "udp-correctness" \
+            "sendto() on the swapped fd must fail or honour the address it was given" \
+            "dynamic" "honored_or_refused" "$obs" "$verdict" \
+            "$evid" \
+            "false" "LIMITATIONS.md#udp" \
+            "The silent failure the original draft expected to surface as EPROTOTYPE: bytes the app addressed to B ride the stream opened for A, with no error anywhere. Data-integrity failure — detectable only in-process (SO_TYPE / getpeername), never from the wire or from errno. Live-Tor dependent, hence not a gate." \
+            "$expv"
     else
         record "udp.fd_swap" "udp-correctness" \
             "the application's UDP fd must not become a TCP socket (dup2 swap)" \
             "dynamic" "fd_unchanged" "not_run" "UNTESTED" \
+            '{"reason":"nothing listening on 127.0.0.1:9050"}' \
+            "false" "LIMITATIONS.md#udp" "" "UNTESTED"
+        record "udp.silent_misdelivery" "udp-correctness" \
+            "sendto() on the swapped fd must fail or honour the address it was given" \
+            "dynamic" "honored_or_refused" "not_run" "UNTESTED" \
             '{"reason":"nothing listening on 127.0.0.1:9050"}' \
             "false" "LIMITATIONS.md#udp" "" "UNTESTED"
     fi

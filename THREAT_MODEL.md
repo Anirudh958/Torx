@@ -167,7 +167,7 @@ interpretation in `LIMITATIONS.md`).
 | Raw-syscall bypass blocked | `bypass.raw_syscall` — `syscall(__NR_connect)` probe |
 | Static-binary bypass blocked | `bypass.static_binary` — `-static` probe |
 | UDP payload never routes | `udp.export.sendto` — no `sendto`/`sendmsg` export (class `udp`) |
-| UDP not corrupted | `udp.connect_hijack`, `udp.fd_swap` (class `udp-correctness`) |
+| UDP not corrupted | `udp.connect_hijack`, `udp.fd_swap`, `udp.silent_misdelivery` (class `udp-correctness`) |
 | Fail-closed on Tor outage | implied by `tcp.interception` (dead SOCKS port ⇒ connect fails) |
 | Circuit isolation | *planned* `tests/isolation/` — `GETINFO circuit-status` differs (UNTESTED) |
 

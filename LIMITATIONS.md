@@ -19,7 +19,7 @@ CI enforces `expected_verdict` on every `ci_gate` row, **in both
 directions**: a leak appearing is a regression, and a leak disappearing is an
 undocumented behaviour change until this file says otherwise.
 
-## Current results (16 rows)
+## Current results (17 rows)
 
 | id | class | verdict | one-line statement |
 |---|---|---|---|
@@ -35,6 +35,7 @@ undocumented behaviour change until this file says otherwise.
 | `udp.export.sendto` | udp | **REFUTED** | no `sendto`/`sendmsg` hook: UDP payload never routes |
 | `udp.connect_hijack` | udp-correctness | **REFUTED** | UDP `connect()` is routed as TCP |
 | `udp.fd_swap` | udp-correctness | **REFUTED** | the UDP fd is silently replaced by a TCP socket |
+| `udp.silent_misdelivery` | udp-correctness | **REFUTED** | `sendto()` succeeds after the swap; the address is silently dropped |
 | `dns.dynamic.egress` | dns | UNTESTED | egress not observed (needs `CAP_NET_RAW`) |
 | `tor.e2e` | tcp | VERIFIED | end-to-end egress is genuinely Tor |
 
@@ -155,6 +156,20 @@ silently, with `connect()` returning success. For anything that uses the
 connected UDP socket as a multi-peer endpoint (`sendto()` to other
 addresses), the data is misdelivered rather than refused. This is worse
 than not anonymizing it — it corrupts it.
+
+**Misdelivery, measured (`udp.silent_misdelivery` → `REFUTED`).** After
+the swap, `sendto(8.8.8.8:53)` returns success (`rc:1`, `errno:0`) while
+the payload rides the stream opened for `1.1.1.1:53` — the address is
+discarded by the kernel because the socket is now connected
+(evidence: `intended_dest`, `first_stream_target`, `addr_ignored:true`).
+No errno fires on `send`/`sendto`/`connect`; the only in-app tells are
+`SO_TYPE` and `getpeername()`, which returns the Tor SOCKS listener
+(`127.0.0.1:9050`, evidence `peer_after_swap`) instead of the
+destination the app dialed. A second `connect()` re-routes on the same
+fd (`reroutes:2`) — a *new* SOCKS stream each time. Whether Tor assigns
+a different circuit per stream is policy-dependent and not observable
+from the client side here (no control port), so the row records stream
+identity, not circuit identity.
 
 **Why the split matters for remediation.** A socktype check (refuse or
 bypass `SOCK_DGRAM`) removes class 2 only: the socket stops being

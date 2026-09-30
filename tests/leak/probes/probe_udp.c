@@ -11,6 +11,8 @@
  * to everything except getsockopt(SO_TYPE):
  *   send()        on the swapped fd
  *   sendto()      with a DIFFERENT destination address
+ *   getpeername() does the app still see the destination it dialed?
+ *   getsockname() local side of the (possibly swapped) socket
  *   connect()     a second time (does the shim re-route the now-TCP fd?)
  *
  * Output is machine-parseable (key: rc=N errno=N) for run.sh evidence.
@@ -34,6 +36,27 @@ static void show(const char *what, ssize_t rc)
 {
     int e = errno;
     fprintf(stderr, "%s: rc=%zd errno=%d\n", what, rc, rc < 0 ? e : 0);
+}
+
+/* which: 0 = getpeername, 1 = getsockname. After a dup2 swap the peer is
+ * the Tor SOCKS listener (127.0.0.1:9050), not the destination the app
+ * dialed — the second in-app tell, for apps that check. */
+static void show_name(const char *what, int fd, int which)
+{
+    struct sockaddr_in sa;
+    socklen_t sl = sizeof sa;
+    memset(&sa, 0, sizeof sa);
+    errno = 0;
+    int rc = which ? getsockname(fd, (struct sockaddr *)&sa, &sl)
+                   : getpeername(fd, (struct sockaddr *)&sa, &sl);
+    if (rc == 0) {
+        char ip[INET_ADDRSTRLEN] = "?";
+        inet_ntop(AF_INET, &sa.sin_addr, ip, sizeof ip);
+        fprintf(stderr, "%s: rc=0 errno=0 addr=%s:%u\n",
+                what, ip, ntohs(sa.sin_port));
+    } else {
+        fprintf(stderr, "%s: rc=-1 errno=%d\n", what, errno);
+    }
 }
 
 int main(int argc, char **argv)
@@ -74,6 +97,9 @@ int main(int argc, char **argv)
         errno = 0;
         show("sendto", sendto(s, "y", 1, MSG_NOSIGNAL,
                               (struct sockaddr *)&b, sizeof b));
+
+        show_name("peer",  s, 0);
+        show_name("local", s, 1);
 
         errno = 0;
         show("reconnect", connect(s, (struct sockaddr *)&b, sizeof b));
