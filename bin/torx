@@ -1,0 +1,44 @@
+#!/bin/sh
+# torx — launcher wrapper for libtorx.so
+#
+# Usage: torx COMMAND [ARGS...]
+#
+# Environment:
+#   TORX_LIB     path to libtorx.so   (default: build tree, then system paths)
+#   TORX_PROXY   Tor SOCKS host       (default 127.0.0.1)
+#   TORX_PORT    Tor SOCKS port       (default 9050)
+#   TORX_DEBUG   set to 1 for stderr tracing
+set -eu
+
+if [ -z "${TORX_LIB:-}" ]; then
+    here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+    for cand in "$here/../libtorx.so" \
+                /usr/local/lib/libtorx.so \
+                /usr/lib/libtorx.so; do
+        if [ -r "$cand" ]; then TORX_LIB=$cand; break; fi
+    done
+fi
+
+if [ -z "${TORX_LIB:-}" ] || [ ! -r "$TORX_LIB" ]; then
+    printf 'torx: cannot find libtorx.so (set TORX_LIB)\n' >&2
+    exit 1
+fi
+
+if [ "$#" -eq 0 ]; then
+    printf 'usage: torx COMMAND [ARGS...]\n' >&2
+    exit 2
+fi
+
+: "${TORX_PROXY:=127.0.0.1}"
+: "${TORX_PORT:=9050}"
+export TORX_PROXY TORX_PORT
+
+# Append rather than clobber: never silently drop an existing preload.
+if [ -n "${LD_PRELOAD:-}" ]; then
+    LD_PRELOAD="$TORX_LIB $LD_PRELOAD"
+else
+    LD_PRELOAD="$TORX_LIB"
+fi
+export LD_PRELOAD
+
+exec "$@"
