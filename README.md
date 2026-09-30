@@ -13,6 +13,8 @@ is built around proving that claim mechanically, not asserting it.
 |---|---|
 | [`THREAT_MODEL.md`](THREAT_MODEL.md) | adversarial model (A1–A4), guarantees/non-guarantees, the v0.1.0-legacy → Phase-2 (netns/cgroup/nftables) thesis, test strategy |
 | [`LIMITATIONS.md`](LIMITATIONS.md) | every known failure, each one backed by a recorded test row |
+| [`DETECTION.md`](DETECTION.md) | defender-side rules per leak class, each citing the row that validates it |
+| [`SECURITY.md`](SECURITY.md) | findings policy — what is a bug here, what is the thesis |
 | [`tests/leak/README.md`](tests/leak/README.md) | the leak-taxonomy harness: modes, schema, CI gate semantics |
 | [`docs/build-notes.md`](docs/build-notes.md) | how to build it and the gotchas that produced the current Makefile |
 
