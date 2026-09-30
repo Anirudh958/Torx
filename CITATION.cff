@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "TORX — a legacy LD_PRELOAD Tor shim, kept as a control group"
+type: software
+authors:
+  - family-names: Gupta
+    given-names: Anirudh
+    email: anirudh@users.noreply.github.com
+version: 0.1.0
+date-released: "2026-09-30"
+license: MIT
+abstract: >-
+  Research artifact arguing that LD_PRELOAD is the wrong primitive for
+  routing a process through Tor: a measured leak taxonomy (dns, udp,
+  ipv6, tcp, udp-correctness), a committed evidence harness
+  (tests/leak/results.jsonl, schema 2), and mapped detection rules for
+  the residual leaks. The shim itself is legacy and intentionally
+  unpatched; the netns/cgroup/nftables architecture it motivates is
+  documented in THREAT_MODEL.md.
+keywords:
+  - tor
+  - ld-preload
+  - anonymity
+  - network-namespace
+  - leak-taxonomy
+  - detection-engineering

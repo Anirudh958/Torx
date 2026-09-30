@@ -5,3 +5,4 @@ dist/
 
 # leak harness scratch builds — results.jsonl / results.md ARE committed
 tests/leak/.build/
+results.*.tmp
