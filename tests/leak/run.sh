@@ -656,6 +656,17 @@ finalize() {
     printf '\n%d rows -> %s, %s\n' "${#RECORDS[@]}" \
         "${JSONL#"$ROOT"/}" "${MARKDOWN#"$ROOT"/}"
 
+    # A regenerated snapshot dirtying a clean tree is the design working, not
+    # a bug — but a reviewer watching `git status` cannot tell which case they
+    # are in. Say which, at the moment the diff is created. Same rule as a
+    # null *_observed: silence must be loud.
+    if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 \
+        && ! git -C "$ROOT" diff --quiet -- "${JSONL#"$ROOT"/}" 2>/dev/null; then
+        printf '\nSnapshot at %s may now differ from HEAD.\n' "${JSONL#"$ROOT"/}"
+        printf '  _meta / evidence-only diff: regeneration, safe to revert or refresh.\n'
+        printf '  verdict / expected_verdict diff: a finding. See tests/leak/README.md.\n'
+    fi
+
     [ "$fails" -eq 0 ] || exit 1
 }
 
