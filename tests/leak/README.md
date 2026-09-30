@@ -75,8 +75,13 @@ applies to every class: name what went wrong, not just where.
 The first line of `results.jsonl` is `_meta`, never a result:
 
 ```json
-{"id":"_meta","schema":1,"generated":"…Z","commit":"…","mode":"both|static|dynamic","host":"…","tor_version":"…"}
+{"id":"_meta","schema":2,"generated":"…Z","commit":"…","mode":"both|static|dynamic","host":"…","tor_version":"…","results_schema_url":"tests/leak/SCHEMA.md"}
 ```
+
+The full record contract — top-level fields, the `_meta` fields, and the
+versioning rules for `schema` — lives in [`SCHEMA.md`](SCHEMA.md).
+`schema` bumps only when that top-level contract changes; keys *inside*
+`evidence` are row-specific measurements and never bump it.
 
 `commit` is the revision the run **executed** at (a file cannot contain the
 hash of the commit that contains it) — so `_meta` may legitimately diff on

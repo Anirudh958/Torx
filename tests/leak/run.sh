@@ -335,20 +335,41 @@ run_dynamic() {
     # The hook never checks socktype, so a SOCK_DGRAM connect() is routed
     # as TCP. Deterministic under TORX_PORT=1: the trace alone proves the
     # hijack attempt, no Tor needed.
+    #
+    # post_stats: probe_udp prints machine-parseable post-conditions
+    # ("what: rc=N errno=N") after a successful connect — send(), sendto()
+    # to a different destination, and a second connect(). These are the
+    # only signals an application has after the corruption; see SCHEMA.md
+    # for how they ride in evidence.
+    post_stats() { # $1 = probe stderr file
+        local f="$1"
+        POST_SEND_RC=$(sed -n 's/^send: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\1/p' "$f" | head -1)
+        POST_SEND_ERRNO=$(sed -n 's/^send: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\2/p' "$f" | head -1)
+        POST_SENDTO_RC=$(sed -n 's/^sendto: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\1/p' "$f" | head -1)
+        POST_SENDTO_ERRNO=$(sed -n 's/^sendto: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\2/p' "$f" | head -1)
+        POST_RECONN_RC=$(sed -n 's/^reconnect: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\1/p' "$f" | head -1)
+        POST_RECONN_ERRNO=$(sed -n 's/^reconnect: rc=\(-\?[0-9]\+\) errno=\([0-9]\+\).*/\2/p' "$f" | head -1)
+        POST_SO_TYPE_AFTER=$(sed -n 's/.*so_type_after=\([0-9]*\).*/\1/p' "$f" | head -1)
+        POST_REROUTES=$(grep -cF "$TRACE" "$f" 2>/dev/null)
+        [ -n "$POST_REROUTES" ] || POST_REROUTES=0
+    }
     PROBE_EXIT=0
     TORX_DEBUG=1 TORX_PORT=1 LD_PRELOAD="$LIB" timeout 8 \
         "$BUILD/probe_udp" 1.1.1.1 53 2>"$BUILD/last.err" || PROBE_EXIT=$?
     if grep -qF "$TRACE" "$BUILD/last.err" 2>/dev/null; then PROBE_ROUTED=true
     else PROBE_ROUTED=false; fi
-    local so_type
+    local so_type reroutes
     so_type=$(sed -n 's/.*so_type=\([0-9]*\).*/\1/p' "$BUILD/last.err" | head -1)
+    post_stats "$BUILD/last.err"
+    reroutes=$POST_REROUTES
     observed=$([ "$PROBE_ROUTED" = true ] && echo hijack_attempted || echo passthrough)
     verdict=$(verdict_for passthrough_or_error "$observed")
     record "udp.connect_hijack" "udp-correctness" \
         "a SOCK_DGRAM connect() must not be converted into a Tor TCP connection" \
         "dynamic" "passthrough_or_error" "$observed" "$verdict" \
         "$(jq -cn --argjson exit "$PROBE_EXIT" --arg so_type "${so_type:-unknown}" \
-            '{probe:"SOCK_DGRAM connect() to 1.1.1.1:53", exit:$exit, routed:('"$PROBE_ROUTED"'), so_type:$so_type, so_type_note:"1=SOCK_STREAM 2=SOCK_DGRAM"}')" \
+            --argjson reroutes "$reroutes" \
+            '{probe:"SOCK_DGRAM connect() to 1.1.1.1:53", exit:$exit, routed:('"$PROBE_ROUTED"'), so_type:$so_type, reroutes:$reroutes, so_type_note:"1=SOCK_STREAM 2=SOCK_DGRAM", reroutes_note:"times the shim printed the routing trace: 1 = initial connect only (post-ops skipped because the dead-port dial failed)"}')" \
         "true" "LIMITATIONS.md#udp" \
         "Correctness class (socket corruption), not the anonymity class — that is udp.export.sendto. No SO_TYPE check exists anywhere in torx.c, so SOCKS4 (TCP-only) is attempted on a datagram socket; so_type here is still 2 only because the dead-port dial fails first — see udp.fd_swap for the live swap." \
         "REFUTED"
@@ -359,15 +380,29 @@ run_dynamic() {
         TORX_DEBUG=1 TORX_PORT=9050 LD_PRELOAD="$LIB" timeout 20 \
             "$BUILD/probe_udp" 1.1.1.1 53 2>"$BUILD/last.err" || PROBE_EXIT=$?
         so_type=$(sed -n 's/.*so_type=\([0-9]*\).*/\1/p' "$BUILD/last.err" | head -1)
+        post_stats "$BUILD/last.err"
         observed=$([ "$so_type" = "1" ] && echo fd_became_tcp || echo fd_unchanged)
         verdict=$(verdict_for fd_unchanged "$observed")
         record "udp.fd_swap" "udp-correctness" \
             "the application's UDP fd must not become a TCP socket (dup2 swap)" \
             "dynamic" "fd_unchanged" "$observed" "$verdict" \
             "$(jq -cn --argjson exit "$PROBE_EXIT" --arg so_type "${so_type:-unknown}" \
-                '{probe:"SOCK_DGRAM connect() via live Tor", exit:$exit, so_type:$so_type}')" \
+                --arg so_type_after "${POST_SO_TYPE_AFTER:-unknown}" \
+                --argjson send_rc "${POST_SEND_RC:-null}" \
+                --argjson send_errno "${POST_SEND_ERRNO:-null}" \
+                --argjson sendto_rc "${POST_SENDTO_RC:-null}" \
+                --argjson sendto_errno "${POST_SENDTO_ERRNO:-null}" \
+                --argjson reconn_rc "${POST_RECONN_RC:-null}" \
+                --argjson reconn_errno "${POST_RECONN_ERRNO:-null}" \
+                --argjson reroutes "${POST_REROUTES:-0}" \
+                '{probe:"SOCK_DGRAM connect() via live Tor", exit:$exit, so_type:$so_type, so_type_after:$so_type_after,
+                  post_swap_send_rc:$send_rc, post_swap_send_errno:$send_errno,
+                  post_swap_sendto_rc:$sendto_rc, post_swap_sendto_errno:$sendto_errno,
+                  post_swap_reconnect_rc:$reconn_rc, post_swap_reconnect_errno:$reconn_errno,
+                  reroutes:$reroutes,
+                  no_errno_note:"send/sendto/reconnect all returned success after the swap — no errno is raised, so SO_TYPE is the only in-app tell"}')" \
             "false" "LIMITATIONS.md#udp" \
-            "The corruption in its final form: connect() returned success while the fd became SOCK_STREAM — the app's datagram payload now rides a TCP stream. Correctness class, distinct from the udp leak class. Needs a live Tor, hence not a gate." \
+            "The corruption in its final form: connect() returned success while the fd became SOCK_STREAM — the app's datagram payload now rides a TCP stream, send()/sendto() still report success (address silently ignored), and a second connect() routes a fresh Tor stream over the same fd (reroutes=2). Correctness class, distinct from the udp leak class. Needs a live Tor, hence not a gate." \
             "REFUTED"
     else
         record "udp.fd_swap" "udp-correctness" \
@@ -432,10 +467,13 @@ finalize() {
     # _meta: makes a committed results.jsonl self-describing. `commit` is the
     # revision this run EXECUTED at (a file cannot contain the hash of the
     # commit that contains it — regenerate after verdict-affecting changes).
+    # `schema` bumps only when the top-level record contract changes
+    # (additive evidence keys do not — see SCHEMA.md).
     meta=$(jq -cn --arg generated "$ts" --arg commit "$rev" --arg mode "$MODE" \
         --arg host "$(uname -srm)" --arg tor_version "$torv" \
-        '{id:"_meta",schema:1,generated:$generated,commit:$commit,mode:$mode,
-          host:$host,tor_version:$tor_version}')
+        --arg schema_url "tests/leak/SCHEMA.md" \
+        '{id:"_meta",schema:2,generated:$generated,commit:$commit,mode:$mode,
+          host:$host,tor_version:$tor_version,results_schema_url:$schema_url}')
 
     # Partial runs (--static / --dynamic) merge into the committed file by id
     # so a PR's static run can never destroy previously recorded dynamic
