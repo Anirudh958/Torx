@@ -22,8 +22,9 @@ make && ./tests/leak/run.sh     # results.jsonl + results.md
 
 Exit codes: `0` all `ci_gate` rows match their documented verdict ·
 `1` gate violation (a verdict drifted — fix the code or update
-`LIMITATIONS.md` and `expected_verdict`) · `2` setup error (library or
-probe build missing).
+`LIMITATIONS.md` and `expected_verdict` — **or** an `*_observed` field
+holds `null` without its sibling `*_reason`, see SCHEMA.md) · `2` setup
+error (library or probe build missing).
 
 If the host has no egress, dynamic rows **degrade to `UNTESTED` and the run
 still exits 0** — a dead CI runner is never mistaken for a real leak.
@@ -108,6 +109,12 @@ row fails CI when observed differs — in **both** directions:
   and nobody wrote it down — the fix is not real until the doc moves
 
 `UNTESTED` never fails the gate.
+
+The gate has a second, independent assertion: any `null` in an
+`*_observed` evidence field must carry a `*_reason` sibling saying why
+the observation is absent (SCHEMA.md). `null` alone could be read as
+"zero" or as "not checked" — both wrong — so the pair is required and
+its absence fails the same way a verdict drift does.
 
 ## Partial runs merge
 

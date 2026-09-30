@@ -46,6 +46,16 @@ read `_meta.results_schema_url` to find this file.
   does **not** bump `schema`: parsers must treat `evidence` as opaque.
   Removing a row-specific evidence key also does not bump, but it does
   invalidate any prose that cites the key — search before you delete.
+- **A `null` in an `*_observed` evidence key must be accompanied by a
+  sibling `*_reason` key** (same object) stating why the observation is
+  absent. `null` alone is ambiguous — it reads as "zero" to one consumer
+  and as "not checked" to another; both readings would be wrong. Name
+  an unobserved measurement `<name>_observed` so the null is
+  self-describing, and pair it. Example (from `udp.quic.bypass`):
+  `packets_on_lo_to_9050_observed: null` +
+  `packets_on_lo_to_9050_reason: "no CAP_NET_RAW; tcpdump unavailable
+  in test environment"`. `run.sh` finalize fails the build when the
+  pair is broken, so this rule is machine-checkable, not aspirational.
 - Consumers must ignore unknown fields within their schema version, and
   must branch on `schema` before parsing any field whose meaning they
   could not witness.

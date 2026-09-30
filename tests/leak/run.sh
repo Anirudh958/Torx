@@ -515,8 +515,9 @@ run_dynamic() {
                       under_torx_http_version:$tv,
                       tcp_fallback:$fallback,
                       shim_trace_count:$traces,
-                      packets_on_lo_to_9050:null,
-                      capture_note:"tcpdump needs CAP_NET_RAW on this host; zero SOCKS handshake inferred instead — shim_trace_count 0 means no connect() fired, so no dial and no packets to 127.0.0.1:9050"}')" \
+                      packets_on_lo_to_9050_observed:null,
+                      packets_on_lo_to_9050_reason:"no CAP_NET_RAW; tcpdump unavailable in test environment",
+                      capture_note:"tcpdump needs CAP_NET_RAW on this host; zero SOCKS handshake inferred instead — shim_trace_count 0 means no connect() fired, so no dial and no packets to 127.0.0.1:9050. Asymmetry worth stating: emitting this bypass needs no privilege at all (an ordinary UDP socket); observing it needed the privilege this runner lacked — the unprivileged leak is invisible to the unprivileged watcher"}')" \
                 "false" "LIMITATIONS.md#udp" \
                 "The browser-scale consequence of udp.export.sendto: any modern browser speaking HTTP/3 is invisibly unproxied — same LD_PRELOAD, same environ, direct UDP. Observed end-to-end rather than probed, hence method=behavioral. Never a gate: depends on an external service." \
                 "$expv"
@@ -628,6 +629,26 @@ finalize() {
             fails=1
         fi
     done < <(jq -r 'select(.ci_gate) | [.id,.verdict,.expected_verdict]|join("\t")' "$JSONL")
+
+    # Gate: a null in an `*_observed` evidence field must carry a sibling
+    # `*_reason` (SCHEMA.md). `null` must never be readable as "zero" or
+    # as "we didn't check" — the reason field is what disambiguates, and
+    # this check is what makes the distinction machine-checkable.
+    local miss
+    miss=$(jq -r 'select(.id != "_meta")
+        | .id as $id | (.evidence // {}) as $e
+        | [$e | to_entries[]
+           | select((.key | endswith("_observed")) and .value == null)
+           | (.key | sub("_observed$"; "_reason"))
+           | select($e[.] == null)]
+        | select(length > 0)
+        | "\($id): \(join(", "))"' "$JSONL")
+    if [ -n "$miss" ]; then
+        printf 'GATE VIOLATION: null *_observed without sibling *_reason:\n' >&2
+        printf '  %s\n' "$miss" >&2
+        printf '  -> SCHEMA.md: null never means "zero" or "not checked" alone\n' >&2
+        fails=1
+    fi
 
     printf '\n'
     jq -r 'select(.id != "_meta") | "  \(.verdict|lpad(8;." "))  \(.id)"' "$JSONL" 2>/dev/null \

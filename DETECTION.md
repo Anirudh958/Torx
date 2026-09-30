@@ -159,13 +159,17 @@ curl --http3-only -sS -o /dev/null -w '%{http_version}\n' \
 
 Both runs negotiate `3`. The h3 session is direct end-to-end — class-1
 leak, zero errors, zero corruption (§2.4's swap never triggers because
-`connect()` is never called). The row records `packets_on_lo_to_9050:
-null` with a capture note: `tcpdump` needs `CAP_NET_RAW` on the build
-host, so the zero-handshake conclusion is drawn from
-`shim_trace_count:0` (no `connect()` fired ⇒ no SOCKS dial ⇒ no
-packets to `127.0.0.1:9050`) — inferred from the mechanism, not
-sniffed. The static row above is what grants the rule its `stable`
-status; this row is what makes the consequence visible.
+`connect()` is never called). The row records
+`packets_on_lo_to_9050_observed: null` with the reason sibling
+`packets_on_lo_to_9050_reason` (`no CAP_NET_RAW; tcpdump unavailable`):
+the zero-handshake conclusion is drawn from `shim_trace_count:0` (no
+`connect()` fired ⇒ no SOCKS dial ⇒ no packets to `127.0.0.1:9050`) —
+inferred from the mechanism, not sniffed, and saying which is a schema
+requirement, not a courtesy (SCHEMA.md: a null `*_observed` without its
+`*_reason` fails the harness). The asymmetry in one line: emitting this
+bypass needs no privilege at all; observing it needed the privilege the
+runner lacked. The static row above is what grants the rule its
+`stable` status; this row is what makes the consequence visible.
 
 ### 2.4 In-process — the only place the corruption is visible
 
