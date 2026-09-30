@@ -12,7 +12,7 @@ read `_meta.results_schema_url` to find this file.
 | `id` | string | Stable row id (`_meta` for line 1). Never renamed — ids are the cross-reference currency of `LIMITATIONS.md`, `THREAT_MODEL.md`, and `DETECTION.md`. |
 | `class` | string | Leak/taxonomy class. Current vocabulary: `dns`, `tcp`, `udp`, `udp-correctness`, `ipv6`, `static`, `direct-syscall`, `elf`. |
 | `description` | string | The invariant under test, phrased as a must/must-not. |
-| `method` | string | How it was tested: `static` (no network) or `dynamic` (ran live; may be degraded to `UNTESTED`). |
+| `method` | string | How it was tested: `static` (no network), `dynamic` (ran live with probes; may be degraded to `UNTESTED`), or `behavioral` (observed a real client end-to-end, no probe — e.g. `curl --http3-only`). |
 | `expected` / `observed` | string | The invariant's expectation vs. what was actually measured. |
 | `verdict` | enum | `VERIFIED` / `REFUTED` / `UNTESTED` / `FLAKY`. |
 | `expected_verdict` | enum | The documented verdict. The gate passes iff `verdict == expected_verdict` **for both** directions (a surprise `VERIFIED` of a documented bug is a finding, not a pass). `UNTESTED` never fails the gate. |
@@ -49,6 +49,11 @@ read `_meta.results_schema_url` to find this file.
 - Consumers must ignore unknown fields within their schema version, and
   must branch on `schema` before parsing any field whose meaning they
   could not witness.
+- **Enum additions do not bump `schema`** (e.g. `method` gaining
+  `behavioral`). A new value does not change what the existing values
+  mean; consumers must tolerate unknown enum members the same way they
+  tolerate unknown fields. Renaming or reinterpreting an existing
+  value *does* bump.
 - A row's `verdict` changing is **never** a schema event. It is a
   finding: see the regeneration policy in `tests/leak/README.md`
   (verdict diffs are reviewed; `_meta` may diff freely).

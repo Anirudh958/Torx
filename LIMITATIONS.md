@@ -19,7 +19,7 @@ CI enforces `expected_verdict` on every `ci_gate` row, **in both
 directions**: a leak appearing is a regression, and a leak disappearing is an
 undocumented behaviour change until this file says otherwise.
 
-## Current results (17 rows)
+## Current results (18 rows)
 
 | id | class | verdict | one-line statement |
 |---|---|---|---|
@@ -33,6 +33,7 @@ undocumented behaviour change until this file says otherwise.
 | `bypass.static_binary` | static | **REFUTED** | `-static` binaries are never seen |
 | `bypass.raw_syscall` | direct-syscall | **REFUTED** | `syscall(__NR_connect)` is never seen |
 | `udp.export.sendto` | udp | **REFUTED** | no `sendto`/`sendmsg` hook: UDP payload never routes |
+| `udp.quic.bypass` | udp | **REFUTED** | HTTP/3 exits direct and identical under the shim — invisibly unproxied |
 | `udp.connect_hijack` | udp-correctness | **REFUTED** | UDP `connect()` is routed as TCP |
 | `udp.fd_swap` | udp-correctness | **REFUTED** | the UDP fd is silently replaced by a TCP socket |
 | `udp.silent_misdelivery` | udp-correctness | **REFUTED** | `sendto()` succeeds after the swap; the address is silently dropped |
@@ -144,6 +145,17 @@ exports exactly one symbol, `connect`. There is no `sendto`/`sendmsg`
 hook, so no UDP payload — DNS-over-UDP, QUIC, VoIP — can ever be steered
 through Tor. Those bytes leave the process on the direct path: UDP is
 simply not anonymized (`THREAT_MODEL.md` §6).
+
+**QUIC, measured (`udp.quic.bypass` → `REFUTED`).** The class-1 leak at
+browser scale: `curl --http3-only` against
+`https://cloudflare-dns.com/dns-query` negotiates HTTP/3 and exits `0`
+*identically* with and without `LD_PRELOAD=libtorx.so`, with
+`shim_trace_count:0` — QUIC uses unconnected sockets, so there is no
+`connect()` for the shim to intercept, and no error anywhere. The app
+believes it is proxied; the shim never sees it; the bytes go direct.
+Any modern browser speaking HTTP/3 is invisibly unproxied under this
+tool. (`method: behavioral` — a real client observed end-to-end, not a
+probe; never a CI gate.)
 
 **Class 2 — correctness (`udp.connect_hijack` → `REFUTED`, `udp.fd_swap`
 → `REFUTED`).** The hook never checks `socktype`, so a `SOCK_DGRAM`

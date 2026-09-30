@@ -221,6 +221,9 @@ skip_all_dynamic() {
     degrade "udp.silent_misdelivery" "udp-correctness" \
         "sendto() on the swapped fd must fail or honour the address it was given" \
         "LIMITATIONS.md#udp" "Needs a live Tor."
+    degrade "udp.quic.bypass" "udp" \
+        "an HTTP/3 client must be intercepted or blocked, not silently direct" \
+        "LIMITATIONS.md#udp" "Behavioral row: needs HTTP/3 curl and egress." "behavioral"
     degrade "dns.dynamic.egress" "dns" "DNS must not egress outside Tor" \
         "LIMITATIONS.md#1-dns" "Static nm assertion is the CI gate for this class."
     degrade "tor.e2e" "tcp" "end-to-end egress via a real Tor circuit" \
@@ -458,6 +461,66 @@ run_dynamic() {
             "dynamic" "honored_or_refused" "not_run" "UNTESTED" \
             '{"reason":"nothing listening on 127.0.0.1:9050"}' \
             "false" "LIMITATIONS.md#udp" "" "UNTESTED"
+    fi
+
+    # --- QUIC bypass: an HTTP/3 client never reaches the shim --------------
+    # method=behavioral: observes a real client end-to-end; no probe involved.
+    # The browser-scale consequence of udp.export.sendto.
+    local h3_curl=false
+    local h3_url='https://cloudflare-dns.com/dns-query?name=example.com&type=A'
+    curl -V 2>/dev/null | grep -qi 'http3' && h3_curl=true
+    if [ "$h3_curl" = false ]; then
+        record "udp.quic.bypass" "udp" \
+            "an HTTP/3 client must be intercepted or blocked, not silently direct" \
+            "behavioral" "intercepted_or_blocked" "not_run" "UNTESTED" \
+            '{"reason":"curl built without HTTP/3"}' \
+            "false" "LIMITATIONS.md#udp" \
+            "Class-1 leak: QUIC uses unconnected sockets, so there is no connect() for the shim to see." \
+            "UNTESTED"
+    else
+        local cv bv tv traces
+        cv=$(curl -V 2>/dev/null | sed -n '1p')
+        bv=$(curl --http3-only -sS -o /dev/null --max-time 20 \
+                 -w '%{http_version}' "$h3_url" 2>/dev/null) || bv=""
+        if [ "$bv" != "3" ]; then
+            record "udp.quic.bypass" "udp" \
+                "an HTTP/3 client must be intercepted or blocked, not silently direct" \
+                "behavioral" "intercepted_or_blocked" "not_run" "UNTESTED" \
+                "$(jq -cn --arg r "baseline curl --http3-only did not negotiate HTTP/3 directly (got: ${bv:-failure})" \
+                    --arg cv "$cv" '{reason:$r, curl_version:$cv, http3_only:true}')" \
+                "false" "LIMITATIONS.md#udp" \
+                "Class-1 leak: QUIC uses unconnected sockets, so there is no connect() for the shim to see." \
+                "UNTESTED"
+        else
+            tv=$(TORX_DEBUG=1 TORX_PORT=9050 LD_PRELOAD="$LIB" \
+                 curl --http3-only -sS -o /dev/null --max-time 20 \
+                 -w '%{http_version}' "$h3_url" 2>"$BUILD/last.err") || tv=""
+            traces=$(grep -cF "$TRACE" "$BUILD/last.err" 2>/dev/null || true)
+            traces=${traces:-0}
+            local obs v expv fallback
+            if   [ "$tv" = "3" ] && [ "$traces" -eq 0 ]; then obs=bypass_direct;      v=REFUTED; fallback=none
+            elif [ "$tv" = "3" ];                        then obs=shim_engaged_h3_direct; v=FLAKY; fallback=none
+            elif [ -n "$tv" ];                           then obs="negotiated_http_$tv"; v=FLAKY; fallback=unknown
+            else                                            obs=not_run;                v=UNTESTED; fallback=unknown; fi
+            expv=REFUTED
+            [ "$v" = "UNTESTED" ] && expv=UNTESTED
+            record "udp.quic.bypass" "udp" \
+                "an HTTP/3 client must be intercepted or blocked, not silently direct" \
+                "behavioral" "intercepted_or_blocked" "$obs" "$v" \
+                "$(jq -cn --arg cv "$cv" --arg bv "$bv" --arg tv "${tv:-}" \
+                    --arg fallback "$fallback" --argjson traces "$traces" \
+                    '{probe:"curl --http3-only against https://cloudflare-dns.com/dns-query",
+                      curl_version:$cv, http3_only:true,
+                      direct_baseline_http_version:$bv,
+                      under_torx_http_version:$tv,
+                      tcp_fallback:$fallback,
+                      shim_trace_count:$traces,
+                      packets_on_lo_to_9050:null,
+                      capture_note:"tcpdump needs CAP_NET_RAW on this host; zero SOCKS handshake inferred instead — shim_trace_count 0 means no connect() fired, so no dial and no packets to 127.0.0.1:9050"}')" \
+                "false" "LIMITATIONS.md#udp" \
+                "The browser-scale consequence of udp.export.sendto: any modern browser speaking HTTP/3 is invisibly unproxied — same LD_PRELOAD, same environ, direct UDP. Observed end-to-end rather than probed, hence method=behavioral. Never a gate: depends on an external service." \
+                "$expv"
+        fi
     fi
 
     # --- DNS dynamic ------------------------------------------------------

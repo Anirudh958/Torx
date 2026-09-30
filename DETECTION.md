@@ -143,22 +143,29 @@ nm -D --defined-only libtorx.so | grep -E ' T (sendto|sendmsg)$' \
 
 `status: stable`, `Executed? = yes`.
 
-**Real-world consequence (observation, not a harness row):** a QUIC
-client bypasses the shim *silently and completely*, because QUIC uses
-unconnected sockets — there is no `connect()` for the hook to see:
+**Real-world consequence, now a harness row (`udp.quic.bypass` →
+`REFUTED`, `method: behavioral`):** a QUIC client bypasses the shim
+*silently and completely*, because QUIC uses unconnected sockets —
+there is no `connect()` for the hook to see:
 
 ```bash
-# identical output with and without TORX; no "[TORX] routing" trace either way
-curl --http3-only -sS -o /dev/null -w '%{exitcode}\n' \
+# identical HTTP/3 negotiation with and without TORX; no "[TORX] routing" trace
+curl --http3-only -sS -o /dev/null -w '%{http_version}\n' \
   'https://cloudflare-dns.com/dns-query?name=example.com&type=A'
 #   under:  TORX_DEBUG=1 TORX_PORT=9050 LD_PRELOAD=./libtorx.so
+#   evidence: direct_baseline_http_version=3, under_torx_http_version=3,
+#             tcp_fallback=none, shim_trace_count=0
 ```
 
-Both runs exit `0`. The h3 session is direct end-to-end — class-1 leak,
-zero errors, zero corruption (§2.4's swap never triggers because
-`connect()` is never called). Mark this as an *observation with a
-reproducible command*, not a row; the static row above is what grants
-the rule its `stable` status.
+Both runs negotiate `3`. The h3 session is direct end-to-end — class-1
+leak, zero errors, zero corruption (§2.4's swap never triggers because
+`connect()` is never called). The row records `packets_on_lo_to_9050:
+null` with a capture note: `tcpdump` needs `CAP_NET_RAW` on the build
+host, so the zero-handshake conclusion is drawn from
+`shim_trace_count:0` (no `connect()` fired ⇒ no SOCKS dial ⇒ no
+packets to `127.0.0.1:9050`) — inferred from the mechanism, not
+sniffed. The static row above is what grants the rule its `stable`
+status; this row is what makes the consequence visible.
 
 ### 2.4 In-process — the only place the corruption is visible
 
@@ -274,7 +281,7 @@ The absence cases — each is a committed row, not a hedge:
 | `TORX-DET-tcp-2` (Suricata) | tcp | **experimental** | no — Suricata/Zeek absent | `draft` | phenomenon: `tcp.interception` + `torx.c` |
 | `TORX-DET-dns-1` (nm check) | dns | stable | **yes** — `make check` / `--static` | `row` | `dns.export.getaddrinfo` |
 | `TORX-DET-dns-2` (correlation) | dns | stable | no — auditd absent | `row` | `dns.export.getaddrinfo` |
-| `TORX-DET-udp-1` (nm check) | udp | stable | **yes** — `make check` / `--static` | `row` | `udp.export.sendto` |
+| `TORX-DET-udp-1` (nm check) | udp | stable | **yes** — `make check` / `--static` | `row` | `udp.export.sendto`, `udp.quic.bypass` |
 | `TORX-DET-udp2-1` (in-process) | udp-correctness | stable | **yes** — executed by `run.sh` | `row` | `udp.fd_swap`, `udp.silent_misdelivery`, `udp.connect_hijack` |
 | `TORX-DET-ipv6-1` (auditd) | ipv6 | stable | no — auditd absent | `row` | `ipv6.passthrough` |
 
@@ -293,14 +300,14 @@ Anchors for the `limitation_ref`s cited above: `LIMITATIONS.md#1-dns`,
 
 ```bash
 make check                       # executes dns-1 and udp-1 (static checks)
-./tests/leak/run.sh              # full run: 17 rows, live-Tor rows degrade honestly
+./tests/leak/run.sh              # full run: 18 rows, live-Tor rows degrade honestly
 ./tests/leak/run.sh --static     # partial run: merges, never overwrites dynamic rows
 
 # the evidence table this document cites:
 grep -v '"_meta"' tests/leak/results.jsonl \
   | jq -r '[.id,.class,.verdict,(.evidence|tostring)]|@tsv'
 
-# §2.3's QUIC observation (needs --http3-capable curl + egress):
+# §2.3's QUIC row, reproduced by hand (needs --http3-capable curl + egress):
 curl --http3-only -sS -o /dev/null -w '%{exitcode}\n' \
   'https://cloudflare-dns.com/dns-query?name=example.com&type=A'
 ```
