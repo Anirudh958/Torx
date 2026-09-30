@@ -182,9 +182,16 @@ shim. Neither is the architecture.
 *(Intentionally empty, as of 2026-09-30.)* No peer-reviewed evaluation
 of the `LD_PRELOAD`-wrapper anonymizer class — comparing wrapper
 fail-open/fail-closed rates against route-based enforcement — was found
-while writing this document. The circumvention-measurement literature
-studies censorship resilience and traffic analysis; it does not grade
-shims. `THREAT_MODEL.md` §7 item 4 (*leak rate: legacy vs. torsocks vs.
-netns*) is this repository's proposal for that experiment. A citation
-here that we had not read would be worse than a visibly empty section;
-if you know of adjacent work, open an issue.
+while writing this document. One distinction a reviewer will rightly
+insist on: the gap is the **wrapper class**, not the **primitive**.
+Whether `LD_PRELOAD` interposition itself is sound — static linking,
+secure-execution mode, `ptrace`-based alternatives — is a studied
+question with a literature behind it; what a wrapper-class anonymizer's
+failures look like, and whether they fail open or closed, is not. The
+circumvention-measurement literature studies censorship resilience and
+traffic analysis; it does not grade shims. `THREAT_MODEL.md` §7 item 4
+(*leak rate: legacy vs. torsocks vs. netns*) is this repository's
+proposal for that experiment. A citation here that we had not read
+would be worse than a visibly empty section — so the primitive-side
+references this paragraph should cross-link, and any adjacent work, go
+in via an issue or a PR from someone who has actually opened them.
