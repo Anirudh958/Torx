@@ -59,6 +59,34 @@ TRACE='[TORX] routing connect()'
 
 [ -f "$LIB" ] || { printf 'setup: %s missing — run `make` first\n' "$LIB" >&2; exit 2; }
 
+# ---------------------------------------------------------------------------
+# Polarity guard (SCHEMA.md §polarity)
+# ---------------------------------------------------------------------------
+# This harness is measurement polarity; its files either predate the field
+# (absent = ours) or stamp "measurement". A file stamped "enforcement"
+# belongs to the Phase-2 harness. Check before the first probe: finalize
+# rewrites _meta and merges by id, so gating a foreign file would not just
+# misread its verdicts, it would destroy the field that identifies them.
+if [ -f "$JSONL" ]; then
+    polarity=$(jq -r 'select(.id == "_meta") | .polarity // empty' "$JSONL" 2>/dev/null | head -n1)
+    case "$polarity" in
+        ''|measurement) ;;
+        enforcement)
+            printf 'POLARITY VIOLATION: %s: _meta.polarity is "enforcement"\n' "${JSONL#"$ROOT"/}" >&2
+            printf '  that file belongs to the Phase-2 enforcement harness, not this one.\n' >&2
+            printf '  Refusing to gate. See SCHEMA.md §polarity.\n' >&2
+            exit 1
+            ;;
+        *)
+            printf 'POLARITY VIOLATION: %s: _meta.polarity unknown (got: "%s")\n' \
+                "${JSONL#"$ROOT"/}" "$polarity" >&2
+            printf '  this harness accepts absent or "measurement" only.\n' >&2
+            printf '  Refusing to gate. See SCHEMA.md §polarity.\n' >&2
+            exit 1
+            ;;
+    esac
+fi
+
 mkdir -p "$BUILD"
 RECORDS=()
 

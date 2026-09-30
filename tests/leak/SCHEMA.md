@@ -34,6 +34,31 @@ read `_meta.results_schema_url` to find this file.
 | `tor_version` | string | `tor --version` first line, or `n/a`. |
 | `results_schema_url` | string | Path to this file, relative to the repo root. *(added in schema 2)* |
 
+## Polarity
+
+Every results file belongs to exactly one harness, and says so.
+Polarity (`_meta.polarity`) is what the file's rows *claim*:
+
+- **`measurement`** — rows record observed behavior of the shim under
+  test. `REFUTED` is data, not a defect of the file. This harness
+  (`tests/leak`) is measurement polarity; its files predate the field,
+  so **absent** `_meta.polarity` means `measurement` (the field is not
+  part of schema 2 and adding it here would be a schema bump — it is
+  not being added).
+- **`enforcement`** — rows assert that a boundary held: green means
+  every escape attempt was blocked. This polarity is born with the
+  Phase-2 harness (netns/cgroup/nftables), which starts its own record
+  contract at `schema: 1` and **requires** `_meta.polarity:
+  "enforcement"` — it refuses to gate a file that does not carry the
+  field, because a verdict in that harness is unreadable without knowing
+  what it claims.
+
+Each harness refuses the other's polarity, before running a single
+probe, so a copied or aliased file can never be merged, rewritten
+(`finalize` replaces `_meta`), or gated by the wrong harness — which
+would silently reinterpret its verdicts. See the `POLARITY VIOLATION`
+check in `run.sh`.
+
 ## Versioning rules
 
 - `schema` is bumped on **any change to the top-level record fields or
