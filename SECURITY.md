@@ -15,3 +15,7 @@ unreported bypasses, supply-chain tampering with the committed
 evidence). Report those via a GitHub security advisory on this
 repository; expect the finding to be triaged against a recorded row
 first — if a row exists, the answer is a row update, not a patch.
+
+A future `netns/` tree is the intended remediation for the `dns` and
+`udp` classes; it is not yet built. Until then, this artifact's leaks
+are by design and will not be patched.

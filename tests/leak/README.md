@@ -91,6 +91,13 @@ in the same commit as any verdict-affecting change, and treat an unexplained
 verdict diff in review as a finding. `_meta` is excluded from the markdown
 render, the gate, and partial-run merge (merge matches other rows by `id`).
 
+Verdicts quoted in `LIMITATIONS.md`, `DETECTION.md`, `SECURITY.md`, and the
+README are **copies** of `results.jsonl`, checked by hand. If a row has not
+run in the current session, the document says so (`UNTESTED (reason)`); a
+stale `REFUTED`/`VERIFIED` in prose with no matching fresh row is a defect
+in the document, not evidence — regenerate and re-cite. This is the
+IPv6 verdict-drift lesson, written down so it does not recur.
+
 ## The gate
 
 `expected_verdict` is what `LIMITATIONS.md` currently claims. A `ci_gate`
