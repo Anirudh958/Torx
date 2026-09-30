@@ -9,6 +9,7 @@ authors:
 version: 0.1.0
 date-released: "2026-09-30"
 license: MIT
+repository-code: https://github.com/Anirudh958/Torx.git
 abstract: >-
   Research artifact arguing that LD_PRELOAD is the wrong primitive for
   routing a process through Tor: a measured leak taxonomy (dns, udp,
