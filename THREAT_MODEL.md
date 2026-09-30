@@ -6,6 +6,22 @@ v0.1.0-legacy — asks the application to cooperate, and applications (hostile,
 static, seccomp'd, or merely clever) do not. Enforcement belongs in the
 kernel: netns + cgroup-v2 BPF + nftables, fail-closed.
 
+The `ldpreload/` artifact attempted enforcement and self-observation in the
+same failure domain, and consequently could not distinguish its own failure
+from its own success: a misdelivered datagram and a correctly delivered one
+produce the same syscall result — and where enforcement could not see (raw
+syscalls, QUIC) neither could it report, so the harness found those leaks
+only by reading the enforcer's silence. The `netns/` artifact moves
+enforcement (in-kernel: nftables + cgroup BPF) and observation (a host-side
+process the wrapped application cannot reach) into separate privilege
+domains. That separation is the architectural precondition for the three
+properties this document claims: the application cannot **disable**
+enforcement, cannot **blind** it on any path inside the enforced coverage —
+completeness of that coverage is itself measured, not assumed — and cannot
+**signal** the observer. Each property names its adversary, its proof, and
+its row family; where coverage ends, the residue is named, and detection
+documents it.
+
 This document is the contract for that claim. It defines *who* we defend
 against, *what* we promise, and — explicitly — what we do not. It is versioned
 with the tool: a claim in this file that stops being true is a breaking change.
