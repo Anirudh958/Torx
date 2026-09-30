@@ -11,11 +11,12 @@ is built around proving that claim mechanically, not asserting it.
 
 | document | what it is |
 |---|---|
-| [`THREAT_MODEL.md`](THREAT_MODEL.md) | adversarial model (A1–A4), guarantees/non-guarantees, the v0.1.0-legacy → Phase-2 (netns/cgroup/nftables) thesis, test strategy |
+| [`THREAT_MODEL.md`](THREAT_MODEL.md) | adversarial model (A1–A7), guarantees/non-guarantees, the v0.1.0-legacy → Phase-2 (netns/cgroup/nftables) thesis, test strategy |
 | [`LIMITATIONS.md`](LIMITATIONS.md) | every known failure, each one backed by a recorded test row |
 | [`DETECTION.md`](DETECTION.md) | defender-side rules per leak class, each citing the row that validates it |
 | [`SECURITY.md`](SECURITY.md) | findings policy — what is a bug here, what is the thesis |
 | [`docs/why-not-torsocks.md`](docs/why-not-torsocks.md) | why the mature shim is still the wrong primitive — the two lineages (libc interposition vs. netns/nftables), credited fairly |
+| [`docs/enforcement.md`](docs/enforcement.md) | the Phase-2 enforcement primitive — netns/cgroup-BPF/nftables topology, mechanism→property→proof mapping, fail-closed launch order, coverage enumeration |
 | [`tests/leak/README.md`](tests/leak/README.md) | the leak-taxonomy harness: modes, schema, CI gate semantics |
 | [`docs/build-notes.md`](docs/build-notes.md) | how to build it and the gotchas that produced the current Makefile |
 

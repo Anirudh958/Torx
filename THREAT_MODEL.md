@@ -166,6 +166,10 @@ drop, seccomp filter denying `ptrace`/`process_vm_readv`/`kcmp`/`userfaultfd`.
 
 ## 4. Guarantees (Phase 2 target)
 
+The mechanism that makes these guarantees possible — and the mapping from
+each mechanism to the proof obligation it carries — is specified in
+[`docs/enforcement.md`](docs/enforcement.md).
+
 ### 4.1 Fail-closed
 If nftables rules fail to apply, or cgroup BPF fails to attach, or Tor's
 SocksPort is unreachable at launch — **the launcher aborts before `exec`**.
