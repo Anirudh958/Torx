@@ -128,6 +128,19 @@ run_static() {
 # every unmet prerequisite, each one *measured at run time* — the reason
 # is evidence, not prose. A launcher that aborts fail-closed reports
 # UNTESTED (reason: launcher aborted at step N), never green.
+
+# nft lives outside a normal user PATH on Debian-derivatives
+# (/usr/sbin) — a `command -v nft` alone once misreported this host as
+# lacking nftables. Search both, because "not in PATH" is not "absent".
+have_nft() {
+    command -v nft >/dev/null 2>&1 && return 0
+    local p
+    for p in /usr/sbin /sbin; do
+        [ -x "$p/nft" ] && return 0
+    done
+    return 1
+}
+
 BOUNDARY_REASON=""
 boundary_up() {
     local missing=()
@@ -137,7 +150,7 @@ boundary_up() {
     elif ! unshare -Urn true 2>/dev/null; then
         missing+=("unprivileged user namespaces unavailable (kernel.unprivileged_userns_clone?)")
     fi
-    command -v nft >/dev/null 2>&1 || missing+=("nft binary not found in PATH")
+    have_nft || missing+=("nft binary not found (PATH, /usr/sbin, /sbin)")
     if [ "${#missing[@]}" -gt 0 ]; then
         BOUNDARY_REASON=$(printf '%s; ' "${missing[@]}")
         BOUNDARY_REASON=${BOUNDARY_REASON%; }

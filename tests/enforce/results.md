@@ -1,8 +1,8 @@
 # TORX enforcement harness results
 
-- generated: `2026-10-01T05:09:25Z`
-- commit: `aebdf53`
-- mode: `static`
+- generated: `2026-10-01T08:32:22Z`
+- commit: `7e847a7`
+- mode: `both`
 - polarity: `enforcement`
 
 | id | class | method | expected | observed | verdict | ci_gate |

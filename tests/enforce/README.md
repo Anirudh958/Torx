@@ -42,9 +42,12 @@ holds `null` without its sibling `*_reason`, see
 If the host cannot build a boundary, dynamic rows **degrade to
 `UNTESTED (reason:)` and the run still exits 0** — a dead or
 half-configured host is never mistaken for a working boundary
-(`docs/harness.md` §2). The current capability split for this machine is
-recorded in [`docs/build-notes.md`](../../docs/build-notes.md) (Phase-2
-capability trial): namespaces yes, `nft` no.
+(`docs/harness.md` §2). The measured capability picture for this machine
+is recorded in [`docs/build-notes.md`](../../docs/build-notes.md)
+(Phase-2 capability trial): the child-side half builds unprivileged —
+namespaces, veth, and nftables all work (`nft` lives at `/usr/sbin/nft`,
+outside a normal user `PATH`). The open items are the launcher itself and
+the unprivileged path to the host's Tor (`docs/harness.md` §6).
 
 ## `boundary.up` — the precondition row
 
