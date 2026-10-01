@@ -135,7 +135,9 @@ dist: check
 	@[ -d bin ] && cp -rv bin dist/torx-$(VERSION)/ || true
 	@[ -d docs ] && cp -rv docs dist/torx-$(VERSION)/ || true
 	@[ -d tests ] && cp -rv tests dist/torx-$(VERSION)/ || true
+	@[ -d netns ] && cp -rv netns dist/torx-$(VERSION)/ || true
 	@rm -rf dist/torx-$(VERSION)/tests/leak/.build dist/torx-$(VERSION)/tests/enforce/.build
+	@rm -f dist/torx-$(VERSION)/netns/torx-launch
 	@tar -C dist -czf dist/$(TARBALL) torx-$(VERSION)
 	@cd dist && sha256sum $(TARBALL) > $(TARBALL).sha256
 	@echo ">> artifacts:"
@@ -144,6 +146,7 @@ dist: check
 # ------- Clean -------
 clean:
 	rm -f $(OBJ) $(LIB)
+	@[ -f netns/Makefile ] && $(MAKE) -C netns clean || true
 	rm -rf dist
 
 # ------- Help -------

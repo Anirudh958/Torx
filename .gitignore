@@ -7,3 +7,6 @@ dist/
 tests/leak/.build/
 tests/enforce/.build/
 results.*.tmp
+
+# netns launcher build (source and docs are committed)
+netns/torx-launch

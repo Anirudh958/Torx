@@ -10,10 +10,14 @@ is the how. The party that will prove the obligations below — from
 where, with what evidence, under which polarity — is specified in
 [`harness.md`](harness.md).
 
-**Status: design contract for the unbuilt `netns/` tree — code last.**
-Nothing here is measured yet. The row IDs cited below are the same targets
-listed in `THREAT_MODEL.md` §3, and every one of them changes here first if
-it changes at all.
+**Status: built.** `netns/torx-launch` implements the §5 sequence, and
+the enforcement harness measures it: `boundary.up` — the launcher
+itself, verified from its own report — is the first row, `VERIFIED`
+where the host has the prerequisites (`tests/enforce/results.jsonl`).
+The remaining row families land when first measured, under
+[`harness.md`](harness.md) §7. The row IDs cited below are the same
+targets listed in `THREAT_MODEL.md` §3, and every one of them changes
+here first if it changes at all.
 
 ## 1. The chokepoint: packets, not library calls
 
