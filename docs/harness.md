@@ -57,7 +57,7 @@ legible independently.
 | probe exit status / errno | did the app's attempt *feel* successful? | probe (instrument) | always |
 | nft JSON counters — child ruleset and host backstop, read as counters not as claimed verdicts | did a packet actually cross, drop, or DNAT? | boundary | read privilege open — §6 |
 | BPF ringbuf fd, handed to the observer at launch, `CLOEXEC`, never entering the child (`enforcement.md` §5 step 8) | what did the process *intend* before any rewrite? | boundary's sensor | launcher contract |
-| Tor TransPort/DNSPort answering on the gateway | does legitimate traffic still tunnel at all? | Tor (a third party — not the app, not the rules) | available — Tor already runs |
+| Tor TransPort/DNSPort answering on the gateway | does legitimate traffic still tunnel at all? | Tor (a third party — not the app, not the rules) | SocksPort runs here; TransPort/DNSPort are a deployment prerequisite, measured absent on this host's default torrc (`build-notes.md`) — step 1 probes what the mode claims (`enforcement.md` §5) |
 | `setns`/`nft flush`/BPF-detach errnos from inside | does tampering fail with `EPERM`? | kernel, via the probe | always |
 
 Two families of rows read this table jointly: the **agreement rows**

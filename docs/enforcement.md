@@ -142,12 +142,17 @@ independently.
 Order matters; this list is `THREAT_MODEL.md` §4.1's fail-closed made
 concrete. Any step failing means teardown and a
 non-zero exit — there is no degraded mode. The mode (§2.1) is fixed and
-recorded before step 1; the steps are mode-independent except step 2
-(which side exists to hold the trusted position) and step 6 (which layer
+recorded before step 1; the steps are mode-independent except step 1
+(which Tor ports the mode's claims depend on), step 2 (which side
+exists to hold the trusted position) and step 6 (which layer
 the mode claims).
 
-1. Probe Tor: SocksPort, TransPort, DNSPort answer from the host. No
-   answer → abort.
+1. Probe Tor, scoped to what the mode claims (§2.1): SocksPort always;
+   TransPort and DNSPort in reference mode only, where they are a
+   deployment prerequisite — the reference host's default torrc
+   answers on SocksPort alone (measured, `build-notes.md`), so a
+   reference launch with transparent ports unconfigured aborts here,
+   fail-closed. No answer from a probed port → abort.
 2. Prepare the trusted side — reference mode: the host netns already
    exists and needs nothing; lab mode: `unshare(CLONE_NEWUSER|CLONE_NEWNET)`
    for N1. Then create the child's netns; create the veth pair; address

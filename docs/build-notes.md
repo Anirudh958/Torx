@@ -134,7 +134,7 @@ table below is the corrected measurement — kept honest rather than tidy.)
 | `bpftool`, `strace` | **absent** | no binary anywhere — the cgroup-BPF attach needs its own loader (or libbpf), not just a compiler |
 | child cgroup creation (own subtree) | **yes** | systemd delegates the invoking cgroup to uid 1000 (`user.slice/user-1000.slice/user@1000.service/…`); `mkdir` inside it succeeds, `mkdir` at the cgroup root does not |
 | `bpf()` — `BPF_PROG_LOAD` probe | **EPERM** | `kernel.unprivileged_bpf_disabled=2`; probed as the unprivileged user *and* as userns root (`unshare -Ur`): errno 1 both times — load/attach needs init-ns capability, so a loader would not have been enough either |
-| Tor on `127.0.0.1:9050` | up | local daemon, same one the `tests/leak` rows use |
+| Tor listeners | **socks only** | `127.0.0.1:9050` answers; TransPort (9040) and DNSPort (5353) absent — empty torrc, defaults. Reference mode's step 1 would fail-closed here until a deployment configures them (`enforcement.md` §5); lab mode never depends on them |
 | `CAP_NET_RAW` | no | same absence the leak harness records; pcap stays out of verdicts (`docs/harness.md` §7) |
 
 Consequences, recorded as found:
