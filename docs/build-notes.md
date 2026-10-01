@@ -157,11 +157,64 @@ Consequences, recorded as found:
 - `tests/enforce`'s `boundary.up` row computes the prerequisites at run
   time and reports `UNTESTED (reason:)` naming each unmet one — never
   silently green, never falsely red (`docs/harness.md` §4).
-- **CI half: still unmeasured.** The local trial answers "can *this
-  host* build a boundary"; it says nothing about a hosted runner. CI
-  wiring for `tests/enforce` therefore stays *deferred, not designed* —
-  a throwaway workflow remains the measurement §6.1 asks for, whenever
-  pushes resume.
+- **CI half: measured 2026-10-02.** A throwaway `capability-probe`
+  workflow (the probe script is preserved in git history at commit
+  `1e1d422`) ran once on a GitHub-hosted `ubuntu-latest` runner
+  (`Linux-6.17.0-1022-azure-x86_64`, uid 1001, `CapEff=0`); the file
+  was deleted after the answer landed here, per `harness.md` §6.1
+  ("measure → record → retire"). Results, against the local column
+  above:
+
+  | check | runner | local |
+  |---|---|---|
+  | unprivileged user namespaces | **no** — `unshare -Urn true` fails `write /proc/self/uid_map: Operation not permitted` despite `unprivileged_userns_clone=1` and `max_user_namespaces=63838` (a restriction the probe did not separately attribute) | yes |
+  | veth inside a userns | no — dies at the same `uid_map` write | yes |
+  | `nft` binary | present: `/usr/sbin/nft` **v1.0.9** (older than local v1.1.3); `/usr/sbin` already on the runner's `PATH` | v1.1.3, PATH-gapped |
+  | `nft list ruleset`, no caps | `EPERM` (cache init) — identical to local | same |
+  | `nft` inside userns | no (userns prerequisite) | yes |
+  | `bpf()` | `kernel.unprivileged_bpf_disabled=2`, `CapEff=0`; the `BPF_MAP_CREATE` probe returned `EINVAL` (attr validation answers before the privilege check — the sysctl is the authoritative fact) | `EPERM` on `BPF_PROG_LOAD` |
+  | loopback TCP (bind/listen/connect) | **yes**, rc 0 | yes |
+  | Tor | absent: no `tor` binary, `127.0.0.1:9050` refused | socks only |
+  | tool belt | `gcc`, `make`, `jq`, `ip`, `nc`, `python3`, `nsenter`, `bpftool` all present | see table above |
+
+  Consequences, recorded as found: static `tests/enforce` (source-audit
+  rows, guard/gate, `make check`) is fully CI-viable. Every row that
+  runs the launcher — `boundary.up`, and with it `disable.*`,
+  `coverage.*`, through-boundary `control.*` — must record
+  `UNTESTED (reason:)` on this runner: the boundary cannot be built
+  there (userns blocked) and there is no Tor to reach either.
+  `UNTESTED` never fails the gate, so CI can go green on statics alone
+  while the dynamic half stays honestly black. The runner *can* host
+  loopback-only rows, which is what makes the `control.*` floor row
+  the one dynamic row with real CI reach. CI wiring for `tests/enforce`
+  stays deferred until there are `signal.*`/`control.*` rows to wire —
+  the capability question §6.1 gated on is now answered.
+
+## Q2: can the observer read the child's nft counters?
+
+`docs/harness.md` §6.2 asked whether an observer *outside* the boundary
+can read live counters from the child ruleset — the dynamic evidence
+the `agreement.*` rows would want. Measured 2026-10-02 locally: a
+child created by `unshare -Urn` applied a `counter` rule and slept;
+the observer (uid 1000, init user namespace, `CapEff=0`) then tried
+every read path:
+
+| path | result |
+|---|---|
+| `nft -j list ruleset` from the host netns | `EPERM` — cache initialization refused |
+| `nsenter -t <child> -n nft …` (child netns only) | `EPERM` at `setns` — needs `CAP_SYS_ADMIN` in the owning userns |
+| `nsenter -U -n …` and `nsenter -U -n -r …` | `EPERM` at `setgroups` — never reaches `nft` |
+| raw `setns(netns_fd, CLONE_NEWNET)` via python | `EPERM` (errno 1) |
+| `nft -j list ruleset` *inside* the userns | **rc 0** — full JSON, counter rule listed |
+
+The child itself ran with `CapEff=000001ffffffffff` inside its own
+userns. Conclusion: **no counter read is possible from outside the
+userns** — every path requires the capability set that exists only
+inside it. `agreement.*` rows therefore cannot lean on live observer
+reads; §6.2's fallback order stands (a launcher-produced counter
+snapshot is corroboration only — the boundary reporting on itself,
+the P3 sin — and rows that cannot avoid it record
+`UNTESTED (reason:)`).
 
 ## Reproducing the artifact
 
