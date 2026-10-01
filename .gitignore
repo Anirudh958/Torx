@@ -3,6 +3,7 @@
 *.so
 dist/
 
-# leak harness scratch builds — results.jsonl / results.md ARE committed
+# harness scratch builds — results.jsonl / results.md ARE committed
 tests/leak/.build/
+tests/enforce/.build/
 results.*.tmp

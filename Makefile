@@ -135,7 +135,7 @@ dist: check
 	@[ -d bin ] && cp -rv bin dist/torx-$(VERSION)/ || true
 	@[ -d docs ] && cp -rv docs dist/torx-$(VERSION)/ || true
 	@[ -d tests ] && cp -rv tests dist/torx-$(VERSION)/ || true
-	@rm -rf dist/torx-$(VERSION)/tests/leak/.build
+	@rm -rf dist/torx-$(VERSION)/tests/leak/.build dist/torx-$(VERSION)/tests/enforce/.build
 	@tar -C dist -czf dist/$(TARBALL) torx-$(VERSION)
 	@cd dist && sha256sum $(TARBALL) > $(TARBALL).sha256
 	@echo ">> artifacts:"

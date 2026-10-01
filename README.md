@@ -19,6 +19,7 @@ is built around proving that claim mechanically, not asserting it.
 | [`docs/enforcement.md`](docs/enforcement.md) | the Phase-2 enforcement primitive — netns/cgroup-BPF/nftables topology, mechanism→property→proof mapping, fail-closed launch order, coverage enumeration |
 | [`docs/harness.md`](docs/harness.md) | the Phase-2 observer harness — three-party separation, evidence sources, row families (incl. inverted coverage rows), polarity birth, open questions |
 | [`tests/leak/README.md`](tests/leak/README.md) | the leak-taxonomy harness: modes, schema, CI gate semantics |
+| [`tests/enforce/README.md`](tests/enforce/README.md) | the Phase-2 enforcement harness: polarity guard, `boundary.up` precondition row, gate — scaffold; rows land with `netns/` |
 | [`docs/build-notes.md`](docs/build-notes.md) | how to build it and the gotchas that produced the current Makefile |
 
 ## Quick start
