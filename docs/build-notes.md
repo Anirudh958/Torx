@@ -132,6 +132,8 @@ table below is the corrected measurement — kept honest rather than tidy.)
 | `ip`, `tc`, `jq`, `timeout` | present | `/usr/bin/ip`, `/usr/sbin/tc` (also `PATH`-gapped), verified by use |
 | `clang` | present, versioned | `/usr/bin/clang-18` and `/usr/lib/llvm-18/bin/clang` — no unversioned `clang` |
 | `bpftool`, `strace` | **absent** | no binary anywhere — the cgroup-BPF attach needs its own loader (or libbpf), not just a compiler |
+| child cgroup creation (own subtree) | **yes** | systemd delegates the invoking cgroup to uid 1000 (`user.slice/user-1000.slice/user@1000.service/…`); `mkdir` inside it succeeds, `mkdir` at the cgroup root does not |
+| `bpf()` — `BPF_PROG_LOAD` probe | **EPERM** | `kernel.unprivileged_bpf_disabled=2`; probed as the unprivileged user *and* as userns root (`unshare -Ur`): errno 1 both times — load/attach needs init-ns capability, so a loader would not have been enough either |
 | Tor on `127.0.0.1:9050` | up | local daemon, same one the `tests/leak` rows use |
 | `CAP_NET_RAW` | no | same absence the leak harness records; pcap stays out of verdicts (`docs/harness.md` §7) |
 
@@ -139,14 +141,19 @@ Consequences, recorded as found:
 
 - **The entire child-side boundary builds unprivileged on this host** —
   namespace, veth, addressing, route, inet nat+filter with DNAT and
-  default drop, verification listing. Not buildable yet: the cgroup-BPF
-  half (no `bpftool`; `clang-18` exists, so the open piece is a loader,
-  not a compiler), and the **path from an unprivileged child netns to
-  the host's Tor** — a veth end cannot be moved into the host network
-  namespace without privilege there, and no other link exists. That gap
-  is a topology question about `docs/enforcement.md` §2 as drawn; it is
-  logged as `docs/harness.md` §6's open question 4, and `netns/` should
-  not be written before it is resolved.
+  default drop, verification listing, plus the child's own cgroup
+  (systemd delegates it). Two halves stay out of reach without init-ns
+  privilege: the **cgroup-BPF attach** — `bpf()` returns `EPERM` for the
+  unprivileged user *and* for userns root, so the missing piece was
+  never just the loader; and the **path from an unprivileged child
+  netns to the host's Tor** — a veth end cannot be moved into the host
+  network namespace without privilege there, and no other link exists.
+  The topology question over `docs/enforcement.md` §2 is resolved as
+  `docs/harness.md` §6's open question 4 (decision, before `netns/` was
+  written): two modes, lab first — `enforcement.md` §2.1 defines the
+  privileged reference mode and the unprivileged lab mode, §5 step 6
+  scopes the sensor attach, and both unreachable halves record
+  `UNTESTED (reason:)` until a reference-mode run exists.
 - `tests/enforce`'s `boundary.up` row computes the prerequisites at run
   time and reports `UNTESTED (reason:)` naming each unmet one — never
   silently green, never falsely red (`docs/harness.md` §4).

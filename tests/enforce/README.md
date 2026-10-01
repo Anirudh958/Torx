@@ -46,8 +46,11 @@ half-configured host is never mistaken for a working boundary
 is recorded in [`docs/build-notes.md`](../../docs/build-notes.md)
 (Phase-2 capability trial): the child-side half builds unprivileged —
 namespaces, veth, and nftables all work (`nft` lives at `/usr/sbin/nft`,
-outside a normal user `PATH`). The open items are the launcher itself and
-the unprivileged path to the host's Tor (`docs/harness.md` §6).
+outside a normal user `PATH`). The topology question is resolved as two
+modes, lab first ([`docs/enforcement.md`](../../docs/enforcement.md)
+§2.1); the open item is the launcher itself, and lab mode's unreachable
+halves — sensor attach, child→Tor — are scoped to `UNTESTED (reason:)`
+(`docs/harness.md` §6, question 4).
 
 ## `boundary.up` — the precondition row
 

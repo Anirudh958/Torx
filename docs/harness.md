@@ -198,12 +198,19 @@ may be answered by assumption in a document like this one.
    drop, `nft list` — builds inside `unshare -Urn` without privilege;
    but a veth end cannot be moved into the host netns without
    privilege there, so an unprivileged child has no path to the host's
-   Tor. Resolution required before `netns/` is written: a privileged
-   launch (root once, §2 exactly as drawn), a lab topology (trusted
-   side = a second userns-owned netns; real-Tor rows degrade to
-   `UNTESTED (reason:)` until a bridge exists), or a userspace bridge
-   (slirp-style, fd-passed from the host phase). Whichever is chosen,
-   §2 and §5 of `enforcement.md` change here first — not in code.
+   Tor, and `bpf()` itself returns `EPERM` for userns root
+   (`kernel.unprivileged_bpf_disabled=2`). **Resolved 2026-10-01,
+   before `netns/` was written (decision: two modes, lab first)** —
+   `enforcement.md` §2.1 defines a privileged *reference* mode (§2
+   exactly as drawn, root once, full claim scope) and an unprivileged
+   *lab* mode (trusted side = a second userns-owned netns, default on
+   an unprivileged host: disable, coverage, backstop, signal rows
+   fully testable; sensor-attach and real-Tor rows `UNTESTED
+   (reason:)`, never `VERIFIED`), with §5's step 2 and step 6 carrying
+   the mode split. Remaining option not taken: a userspace bridge
+   (slirp-style, fd-passed from the host phase) to give lab mode a
+   child→Tor path — deferred until a reference-mode run says what it
+   buys.
 
 ## 7. Non-goals
 

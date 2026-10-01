@@ -66,16 +66,51 @@ The launcher needs privilege once — to create the namespace, the veth, and
 the rules — and the wrapped process gets none of it. That asymmetry is the
 P1 proof obligation in physical form.
 
+### 2.1 Two modes: reference and lab
+
+The diagram above is **reference mode**: one privileged launch against the
+real host, the child's only pipe landing on the host's own Tor. It stays
+the canonical claim. But a boundary only root can build cannot be
+*measured* on an unprivileged machine, and a claim that lives only where
+nobody can run it is assertion, not evidence (`harness.md` §6.1). The
+primitive therefore has exactly two modes, and the mode is recorded in
+every evidence object the launcher produces:
+
+| | reference mode | lab mode |
+|---|---|---|
+| trusted side | the host network namespace, as drawn above | a lab netns (N1) the launcher creates for itself — `unshare(CLONE_NEWUSER\|CLONE_NEWNET)`; the real host and its Tor stay outside the userns |
+| privilege needed | `CAP_NET_ADMIN` in the host netns (root, once) | none — the userns grants `CAP_NET_ADMIN` over N1 and the child netns only |
+| child netns · veth · child ruleset · backstop · caps drop · cgroup join | identical | identical |
+| child → Tor | the path exists — the only pipe lands on TransPort/DNSPort | **no path exists** — N1 has no uplink to the host |
+| claim scope | full: disable, coverage, backstop, sensor, agreement, and "traffic exits via Tor" | disable, coverage, backstop, signal — fully testable; every row whose pass condition needs either the sensor attach or real Tor egress records `UNTESTED (reason: …)` and never `VERIFIED` |
+
+Selection is a measurement, not a preference: the launcher probes for the
+capability it actually needs (`CAP_NET_ADMIN` in its own network
+namespace) and takes reference mode only when that capability is held; a
+forced `--mode=reference` without it aborts fail-closed, the same rule as
+every other step in §5. Lab mode is the default on an unprivileged host
+because it is the mode that can be run there — the child side (netns,
+veth, addressing, `inet` nat+filter with DNAT and default drop, `nft
+list`) is measured working unprivileged on the reference host
+(`build-notes.md`, Phase-2 trial).
+
+What lab mode does **not** do: it does not weaken child-side enforcement.
+The child cannot tell N1 from the real host, because it can reach nothing
+but N1 by construction; and it does not upgrade an `UNTESTED` into
+anything else. Lab claims are lab claims, reference claims wait for a
+privileged environment, and the seam between them is visible in evidence
+rather than papered over.
+
 ## 3. Mechanisms, properties, proof obligations
 
 | # | Mechanism | Placement | Carries | Proof obligation |
 |---|---|---|---|---|
 | 1 | netns + veth + default route | child | the only pipe exists — no other interface, no other route | `coverage.completeness.*` finds no alternate egress; `disable.exit_netns` — `setns` back to the host returns `EPERM` |
 | 2 | nftables nat + filter (`inet`) | child | **P2** — DNAT the covered classes, drop the rest | `coverage.completeness.{tcp,dns,udp,ipv6,raw,io_uring}` — each row attempts an escape and passes only if blocked |
-| 3 | host backstop (`iif veth` accept `{9040,5353}`, else drop) | host | an independent second stop: a child ruleset that is wrong, empty, or (hypothetically) removed still cannot become general egress | `backstop.*` — a test launch with the child ruleset deliberately empty must still end in `PACKET DROPPED`, never in success |
-| 4 | cgroup-v2 BPF (connect hooks → ringbuf) | child's cgroup, owned by the host | **P3** sensor: intent-level events for the observer, plus early denial | `signal.no_shared_fds`, `signal.observer_unreachable` (static rows); agreement rows — every BPF event and every netfilter verdict must be accounted for on both sides |
+| 3 | backstop on the trusted side (`iif veth` accept `{9040,5353}`, else drop) | trusted side (host in reference mode, N1 in lab mode — §2.1) | an independent second stop: a child ruleset that is wrong, empty, or (hypothetically) removed still cannot become general egress | `backstop.*` — a test launch with the child ruleset deliberately empty must still end in `PACKET DROPPED`, never in success |
+| 4 | cgroup-v2 BPF (connect hooks → ringbuf) | child's cgroup, owned by the trusted side; the **attach** itself needs init-ns capability (§5 step 6) | **P3** sensor: intent-level events for the observer, plus early denial | `signal.no_shared_fds`, `signal.observer_unreachable` (static rows); agreement rows — every BPF event and every netfilter verdict must be accounted for on both sides; in lab mode the agreement rows record `UNTESTED (reason:)` (§2.1), and the netfilter verdict carries the gate alone |
 | 5 | capability drop + `NO_NEW_PRIVS` + `dumpable 0` | child at `exec` | **P1** — the kernel itself refuses removal attempts | `disable.nft_flush`, `disable.bpf_detach` — attempted from inside as the wrapped uid, each returns `EPERM` |
-| 6 | Tor TransPort/DNSPort on the gateway address; per-invocation isolation token | host | §4.2 (DNS), §4.3 (isolation) | `tests/isolation/` (planned) — two invocations never share a circuit |
+| 6 | Tor TransPort/DNSPort on the gateway address; per-invocation isolation token | trusted side (reference mode only for reachability — §2.1) | §4.2 (DNS), §4.3 (isolation) | `tests/isolation/` (planned) — two invocations never share a circuit; in lab mode every row with this pass condition records `UNTESTED (reason: lab mode: no path from N1 to the host's Tor)` |
 
 ## 4. Which layer carries the guarantee
 
@@ -92,7 +127,8 @@ is load-bearing:
   packets through the same stack. This layer carries the guarantee.
 
 Failure decomposition follows: a BPF attach that fails is caught before
-`exec` and aborts the launch (§4.1). A BPF hook that silently stops firing
+`exec` and aborts the launch (§5 step 6, per `THREAT_MODEL.md` §4.1 —
+the declared lab-mode EPERM excepted, §2.1). A BPF hook that silently stops firing
 is an *observation* gap — the netfilter verdict still holds, and the
 agreement rows are what notice. A netfilter verdict that holds while no
 BPF event appears is likewise an observation gap, not an escape. The two
@@ -103,19 +139,33 @@ independently.
 
 ## 5. Fail-closed launch sequence
 
-Order matters; §4.1 is this list. Any step failing means teardown and a
-non-zero exit — there is no degraded mode.
+Order matters; this list is `THREAT_MODEL.md` §4.1's fail-closed made
+concrete. Any step failing means teardown and a
+non-zero exit — there is no degraded mode. The mode (§2.1) is fixed and
+recorded before step 1; the steps are mode-independent except step 2
+(which side exists to hold the trusted position) and step 6 (which layer
+the mode claims).
 
 1. Probe Tor: SocksPort, TransPort, DNSPort answer from the host. No
    answer → abort.
-2. Create the netns; create the veth pair; address both ends; install the
-   child's default route via the gateway.
+2. Prepare the trusted side — reference mode: the host netns already
+   exists and needs nothing; lab mode: `unshare(CLONE_NEWUSER|CLONE_NEWNET)`
+   for N1. Then create the child's netns; create the veth pair; address
+   both ends; install the child's default route via the gateway.
 3. Install the child nftables rules (nat + filter, default drop).
-4. Install the host backstop.
+4. Install the backstop on the trusted side (host netns in reference
+   mode, N1 in lab mode).
 5. Verify both rulesets are present and active (`nft list`, non-empty
    chains — a rule that is queued but not applied counts as absent).
-6. Create the child cgroup; attach the BPF programs; verify the attach
-   (an attach error is an abort, not a warning).
+6. Create the child cgroup and attach the BPF programs. In reference
+   mode an attach error is an abort, not a warning. In lab mode the
+   attach is *attempted* and its result recorded as evidence: this host
+   measures `EPERM` for `bpf()` even as userns root
+   (`kernel.unprivileged_bpf_disabled=2`, `build-notes.md`), and that
+   EPERM is the mode's declared scope boundary (§2.1 — sensor rows
+   `UNTESTED`, agreement rows degrade, netfilter carries the gate), not
+   a failure. Any attach error *other than* the scope-declared EPERM is
+   an abort in either mode.
 7. `fork`; the child enters the netns, joins the cgroup, drops to the
    invoking uid, clears all capabilities, sets `PR_SET_NO_NEW_PRIVS` and
    `PR_SET_DUMPABLE 0`.
@@ -126,6 +176,13 @@ non-zero exit — there is no degraded mode.
 Steps 1–8 happen without a wrapped process in existence. A failure cannot
 leave a half-enforced process running, because there is not yet a process
 to half-enforce.
+
+Lab mode's one degradation is claim scope, never mechanism: steps 1–5
+and 7–9 run identically and fail-closed, the child-side enforcement is
+byte-for-byte the reference ruleset, and every row whose pass condition
+sits outside lab mode's scope (§2.1) records `UNTESTED (reason: …)` with
+the mode in its evidence — so a lab run can be green without ever being
+read as a reference run.
 
 ## 6. Coverage enumeration — the P2 obligation, answered once
 
