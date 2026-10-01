@@ -13,7 +13,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write only so the result can be committed back to a throwaway
+  # branch (logs and summaries are admin-only over the API); the branch
+  # is fetched, recorded in docs, and deleted with this file.
+  contents: write
 
 jobs:
   probe:
@@ -128,4 +131,23 @@ jobs:
           if summary:
               with open(summary, "a") as f:
                   f.write("```json\n" + js + "\n```\n")
+          with open("/tmp/torx-capability.json", "w") as f:
+              f.write(js + "\n")
           PY
+
+      - name: publish result to probe-results branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          cp /tmp/torx-capability.json "$work/capability.json"
+          cd "$work"
+          git init -q -b probe-results
+          git config user.name capability-probe
+          git config user.email capability-probe@users.noreply.github.com
+          git add capability.json
+          git commit -q -m "capability probe result for ${GITHUB_SHA}"
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -q -f origin probe-results
+          echo "probe-results pushed"
