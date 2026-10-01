@@ -6,7 +6,9 @@ cannot **signal** the observer — and names the row families that will test
 them. This file specifies the mechanism that makes those properties hold,
 and the mapping from each mechanism to its proof obligation. The *why* is
 [`why-not-torsocks.md`](why-not-torsocks.md) §The correct primitive; this
-is the how.
+is the how. The party that will prove the obligations below — from
+where, with what evidence, under which polarity — is specified in
+[`harness.md`](harness.md).
 
 **Status: design contract for the unbuilt `netns/` tree — code last.**
 Nothing here is measured yet. The row IDs cited below are the same targets

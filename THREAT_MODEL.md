@@ -86,8 +86,10 @@ proven, and which harness rows will hold the proof. Then by **capability**
 | **P3 — cannot be signaled by.** The wrapped application has no channel to the observer except generating the events the observer reads: it cannot reach it, feed it, or silence it by input. | A4 (kill/signals, inherited fds, crafted inputs), A7 (ptrace of the *observer* — not the wrapped process), A2 (same-host, different uid — sufficient only if a shared channel exists, which is what the proof removes). | **By design, structurally asserted.** No shared fds (CLOEXEC audit), observer outside the application's netns (no IPC path exists), observer not traceable by the wrapped uid. Static rows assert each structural fact; none of them proves a negative alone — the design argument carries the claim, the rows make it falsifiable. | `signal.no_shared_fds`, `signal.observer_unreachable` | **Fails** — the observer's only input was the app's own control flow, so the app chose what was signaled: a raw syscall produces `shim_trace_count: 0`, the enforcer's silence read as evidence. |
 
 *Row families are targets, not measurements. The Phase-2 harness that will
-hold them is built after the primitive (§7 sequence, code last); an ID that
-changes before that harness lands changes here first.*
+hold them — who observes, from outside the namespace, and with what
+evidence — is specified in [`docs/harness.md`](docs/harness.md), and is
+built after the primitive (§7 sequence, code last); an ID that changes
+before that harness lands changes here first.*
 
 The same adversaries, organized by what they are capable of, with the legacy
 measurement attached:
