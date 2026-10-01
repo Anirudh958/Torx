@@ -5,12 +5,15 @@
 below cites the `tests/leak/results.jsonl` row that validates it; if a
 row's verdict changes, the corresponding rule's status degrades to
 `experimental` until re-validated. Rule `id`s never change — statuses do.
+The one exception is §6, whose rules cite *planned* Phase-2 rows by
+name until those rows exist — its status note says so on every rule.
 
 The threat model says the artifact is unfixable; this document says it
 must be *findable*. That pairing is the point: an LD_PRELOAD Tor shim
 cannot be patched into correctness (see `LIMITATIONS.md` §3), so the
 operational answer is detect-the-artifact → replace-with-the-netns
-architecture (Phase 2).
+architecture (Phase 2). §6 is the rest of that sentence: what detection
+becomes once the replacement exists.
 
 ---
 
@@ -18,7 +21,7 @@ architecture (Phase 2).
 
 | Axis | Question | Where it is answered |
 |---|---|---|
-| **Phenomenon** | Is the underlying behaviour real? | `tests/leak/results.jsonl` — a cited row with a stable verdict. |
+| **Phenomenon** | Is the underlying behaviour real? | `tests/leak/results.jsonl` — a cited row with a stable verdict (§6: a *planned* row in `tests/enforce/results.jsonl`, named until committed). |
 | **Rule** | Has the detection *rule* been executed? | The `Executed?` column in §5. |
 
 - **`status: stable`** — the phenomenon is validated by a committed row
@@ -261,11 +264,14 @@ The absence cases — each is a committed row, not a hedge:
   network defender sees a normal Tor stream; only the *application*
   holding the socket could notice, and only by asking `SO_TYPE`.
 
+Each entry is an absence *in the shim*. On the boundary the same
+questions get different answers — §6.1 walks this list.
+
 ## 4. Operational notes
 
-- **Two columns, never one.** A report that says "7 rules, 6 stable"
-  has already lost the distinction §1 exists to protect: six of those
-  seven have never touched a telemetry pipeline. Quote `status` and
+- **Two columns, never one.** A report that says "11 rules, 6 stable"
+  has already lost the distinction §1 exists to protect: eight of those
+  eleven have never touched a telemetry pipeline. Quote `status` and
   `Executed?` together.
 - **Rule ids are frozen.** `id:` fields survive status downgrades;
   degradation is a content edit (`stable` → `experimental`) plus a
@@ -275,7 +281,8 @@ The absence cases — each is a committed row, not a hedge:
   the artifact; each signal alone is a lead.
 - **QUIC is the quiet case.** §2.3's observation: full bypass, clean
   exit, no trace — if your only control is "did Tor get the flow?", h3
-  will never trip it.
+  will never trip it. Under the Phase-2 boundary this case inverts
+  into a drop counter (§6.1).
 
 ## 5. Cross-reference
 
@@ -288,19 +295,116 @@ The absence cases — each is a committed row, not a hedge:
 | `TORX-DET-udp-1` (nm check) | udp | stable | **yes** — `make check` / `--static` | `row` | `udp.export.sendto`, `udp.quic.bypass` |
 | `TORX-DET-udp2-1` (in-process) | udp-correctness | stable | **yes** — executed by `run.sh` | `row` | `udp.fd_swap`, `udp.silent_misdelivery`, `udp.connect_hijack` |
 | `TORX-DET-ipv6-1` (auditd) | ipv6 | stable | no — auditd absent | `row` | `ipv6.passthrough` |
+| `TORX-DET-bnd-1` (nft counters) | boundary | experimental | no — no boundary on this host | `draft` | planned: `backstop.*`, `coverage.completeness.*` |
+| `TORX-DET-bnd-2` (intent feed) | boundary | experimental | no — no BPF sensor | `draft` | planned: `signal.*` |
+| `TORX-DET-bnd-3` (agreement gap) | boundary | experimental | no — needs both layers | `draft` | planned: `agreement.*` |
+| `TORX-DET-bnd-4` (fail-closed abort) | boundary | experimental | no — launcher unbuilt | `draft` | planned: `boundary.up` |
 
 `Validated by` is a machine-readable enum: **`row`** = a committed
 `results.jsonl` row re-checks this rule's claim on every harness run;
 **`draft`** = written and source-reviewed only, nothing mechanical ties
 it to the evidence (only `tcp-2`, because the SOCKS4a-on-the-wire claim
-has never been captured). `none` is reserved for a rule with no
-evidence trail at all — there are none. `Status` is the phenomenon,
-`Executed?` is the detector: the two stay separate on purpose.
+has never been captured — and the four `bnd-*` rules, whose Phase-2
+rows are specified in `docs/harness.md` §3 but not yet committed).
+`none` is reserved for a rule with no evidence trail at all — there
+are none. `Status` is the phenomenon, `Executed?` is the detector: the
+two stay separate on purpose.
 
 Anchors for the `limitation_ref`s cited above: `LIMITATIONS.md#1-dns`,
 `#2-ipv6`, `#3-tcp`, `#static`, `#raw-syscall`, `#udp`.
 
-## 6. Reproducing
+## 6. The boundary era — after the replacement
+
+Everything above defends one position: the shim is findable, not
+fixable, so detect-the-artifact → replace with the netns architecture.
+This section is the rest of that sentence — what a defender sees *on*
+the replacement.
+
+**Status: every rule in §6.2 is `status: experimental`,
+`Executed? = no`, `Validated by: draft`.** No Phase-2 row exists yet:
+the harness that will cite them is a spec (`docs/harness.md`), the
+primitive it measures is unbuilt (`docs/enforcement.md`). Each rule
+names the row that will validate it and stays `draft` until that row
+is committed. The §1 axes apply unchanged — this section's claims are
+expectations of the design, not measurements.
+
+### 6.1 The vantage point changes sides
+
+§3's absences were absences of *signal* — the shim emitted nothing a
+defender could read. The boundary inverts each entry, because the
+observation moves from the artifact to the edge:
+
+| §3 blindness (legacy shim) | At the boundary |
+|---|---|
+| static binary / raw syscall — indistinguishable from direct | irrelevant: no syscall is interposed to miss. The packet still exists, so the netfilter verdict is the signal — a bypass attempt becomes a counter increment, identically for every path style (the mechanism behind `coverage.completeness.raw`). |
+| DNS already left | DNAT at the packet layer sees the query regardless of which resolver the app dialed (`docs/enforcement.md` §6). Scope: this holds *inside* the wrapped invocation — other host processes are outside the boundary and their DNS is still direct. |
+| QUIC / unconnected UDP — "the quiet case" (§4) | the loud case: no `connect()` to hook, and no hook needed — the packet hits the filter and is dropped, counted. Design-time expectation; `coverage.completeness.udp` is the row that will decide it. |
+| the corruption itself (§2.4) | gone by construction: there is no interposed fd to swap, so §2.4's canary guards a threat model that no longer applies to wrapped processes. The absence will be confirmed by the `signal.*` family (no shared fds by design), not by a new in-app probe. |
+| the unobserved app — intent lives inside the process | intent is *recorded* before the packet leaves: the BPF ringbuf hands the observer an fd at launch (`docs/enforcement.md` §4). The defender's feed is part of the architecture, outside the app's control. |
+
+Two cells are design-time assertions (QUIC loudness; corruption
+absence). They are phrased as the design's expectation and cite the
+row that will decide them — `experimental` covers exactly this.
+
+### 6.2 Boundary rules
+
+**TORX-DET-bnd-1 (nft counter watch)** — two counters, two
+severities. The child ruleset's own drop counter incrementing is
+*enforcement working*: covered traffic refused — audit it, don't
+panic. The host backstop's drop counter incrementing on the child's
+veth is *the first line was gone*: traffic beyond `{9040,5353}`
+reached the edge, which means the in-namespace ruleset was absent,
+flushed, or bypassed — the `disable.nft_flush` outcome, visible in
+production instead of only in a probe.
+
+```text
+nft -j list ruleset -> child chain, host backstop chain, two counters
+  child drop delta    > 0  -> audit: what was refused (expected enforcement)
+  backstop drop delta > 0  -> ALERT: first line missing (disable.nft_flush)
+```
+
+**TORX-DET-bnd-2 (intent feed, early deny)** — the BPF ringbuf is an
+audit channel first: every wrapped `connect()` records its *original*
+destination before DNAT rewrites it (allowed by construction — the
+app may name anything). The alertable events are the denies: a hook
+refusal on family or socket class, per `docs/enforcement.md` §6's
+enumeration (io_uring reach among them is measure-first there, so it
+enters this rule only once measured).
+
+**TORX-DET-bnd-3 (agreement gap)** — an intent event with no matching
+netfilter verdict, or a verdict with no intent event, sustained over a
+window: the two layers stopped checking each other. This is the
+production form of the harness's `agreement.*` rows — same predicate,
+continuous instead of at test time. Direction matters: a verdict with
+no intent event means the packet outran the sensor; an intent event
+with no verdict means enforcement went unobserved. Either way the
+boundary's completeness claim has broken, and the honest response is
+the one the harness takes — degrade the claim, don't silently
+continue.
+
+**TORX-DET-bnd-4 (fail-closed abort)** — the launcher exits non-zero
+at a `docs/enforcement.md` §5 step: the boundary refused to come up
+rather than come up wrong. Repetition is a misconfiguration signal; a
+*missing* boundary is never to be interpreted as a quiet network.
+
+### 6.3 What the boundary still does not show
+
+The residue is unchanged — `THREAT_MODEL.md` §6 and
+`docs/enforcement.md` §7 enumerate it (traffic analysis on the entry
+flow, in-band deanonymization, host root, a compromised Tor,
+filesystem egress such as a mounted docker.sock). None of it becomes
+visible at the edge, because none of it crosses the edge in a
+distinguishable way — that is what *residue* means. Detection has no
+rule for these, by construction: what the defender gets instead is
+what §6.1's table bought them — the boundary's own telemetry as a
+health signal, plus classical Tor operational monitoring (guard
+selection, entry-flow analysis) for the parts that were never this
+architecture's claim. Filesystem egress remains a named non-goal of
+the network claim and belongs to host audit tooling this repository
+does not ship. This subsection adds no rule, so §5's table does not
+grow for it.
+
+## 7. Reproducing
 
 ```bash
 make check                       # executes dns-1 and udp-1 (static checks)
