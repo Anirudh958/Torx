@@ -1,10 +1,11 @@
 name: ci
 
 # Two jobs, split by what each mode can prove:
-#   static  — nm/readelf/ldd only. No network, no Tor. Every PR/push.
+#   static  — nm/readelf/ldd + the enforce harness's signal.* source
+#             audits (no boundary, no network). No Tor. Every PR/push.
 #   dynamic — needs egress + a Tor daemon. Scheduled and manual only.
-# Both end by running tests/leak/run.sh, whose ci_gate rows fail when a
-# documented verdict changes in EITHER direction (see tests/leak/README.md).
+# Both run tests/leak/run.sh, whose ci_gate rows fail when a documented
+# verdict changes in EITHER direction (see tests/leak/README.md).
 
 on:
   push:
@@ -34,6 +35,13 @@ jobs:
       - name: leak harness (static)
         run: ./tests/leak/run.sh --static
 
+      # signal.* source audits of netns/torx-launch.c — no boundary, no
+      # network, so they gate here even though this runner cannot build
+      # a boundary (docs/harness.md §6.1, measured 2026-10-02). The
+      # boundary-dependent rows run where dynamic mode runs.
+      - name: enforcement harness (static)
+        run: ./tests/enforce/run.sh --static
+
       - name: upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -42,6 +50,16 @@ jobs:
           path: |
             tests/leak/results.jsonl
             tests/leak/results.md
+          if-no-files-found: error
+
+      - name: upload enforce results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enforce-results-static
+          path: |
+            tests/enforce/results.jsonl
+            tests/enforce/results.md
           if-no-files-found: error
 
   dynamic:

@@ -10,8 +10,10 @@ stays in [`why-not-torsocks.md`](why-not-torsocks.md).
 
 **Status: design contract. Code follows this document, same as
 `enforcement.md` — primitive last (§7 sequence), harness before it.**
-Nothing here is measured. Row IDs that change before the harness lands
-change here first.
+Rows that have landed record themselves in
+[`tests/enforce/results.jsonl`](../tests/enforce/results.jsonl); what is
+not yet a row here is unmeasured. Row IDs that change before the harness
+lands change here first.
 
 ## 1. Three parties, two domains
 
@@ -75,8 +77,8 @@ unavailable source is a `null` in `<name>_observed` plus a sibling
 ## 3. Row families — targets, not measurements
 
 The union of `THREAT_MODEL.md` §3's planned families and
-`enforcement.md` §3's per-mechanism obligations. The harness that lands
-becomes the one authority; until then this table is it.
+`enforcement.md` §3's per-mechanism obligations. The harness becomes the
+one authority as rows land; until a family has landed this table is it.
 
 | Family | IDs | Green means | Property |
 |---|---|---|---|
@@ -85,7 +87,7 @@ becomes the one authority; until then this table is it.
 | `backstop.*` | e.g. `empty_child_ruleset` | with the child's ruleset deliberately emptied, traffic still ends `PACKET DROPPED`, never success | P2's independent second stop |
 | `signal.*` | `no_shared_fds`, `observer_unreachable` + the structural statics | the structural fact holds (no smuggled fd, no path from wrapped uid to the observer) | P3 |
 | `agreement.*` | intent↔verdict pairing rows | every event is accounted on both sides | P3/P2 observation integrity |
-| `control.*` | one positive row per covered class where a legitimate path exists | traffic aimed *through* the boundary still reaches Tor | harness integrity — see below |
+| `control.*` | `loopback` floor + one positive row per covered class where a legitimate path exists | floor: with enforcement not yet engaged, local traffic is observable as flowing; pairs: traffic aimed *through* the boundary still reaches Tor | harness integrity — see below |
 
 `coverage.completeness.unix` is `enforcement.md` §6's open question —
 how abstract `AF_UNIX` sockets are scoped inside a netns — as a row
@@ -93,12 +95,17 @@ rather than a footnote; the measurement resolves it or records it as
 residue.
 
 **`control.*` is a new family**, not in `THREAT_MODEL.md` §3's planned
-column: it back-propagates there when the harness lands. It exists
-because the inverted rows have a blind spot of their own — a boundary
-that drops *everything* passes every escape attempt. Each coverage row
-that has a legitimate path needs its paired control showing the same
-path class works when directed at Tor; green is then "blocked the
-escape, carried the legitimate traffic," not merely "nothing got out."
+column: it back-propagates there as the harness-integrity row (C0) when
+it lands — done as the floor row first recorded. It exists because the
+inverted rows have a blind spot of their own — a boundary that drops
+*everything* passes every escape attempt. The family opens with
+`control.loopback`, which needs no boundary: with enforcement not yet
+engaged it proves the observer can record "traffic flowed," so a later
+"blocked" from an inverted row means "flowing was demonstrable," not
+merely "nothing got out." Each coverage row that has a legitimate path
+then needs its paired positive control — same path class, directed at
+Tor — so green becomes "blocked the escape, carried the legitimate
+traffic."
 
 `tests/isolation/` (`enforcement.md` §3 mechanism 6, §4.3) stays a
 separate, later harness — circuit non-sharing is a different question
@@ -107,13 +114,23 @@ from egress.
 ## 4. Never silently green
 
 - **The mode split is inherited.** `--static` rows assert structural
-  facts (fds are `CLOEXEC`, no shared channel, capability bits as read
-  from `/proc`) — no network, no namespace, gated on every CI run,
-  exactly like Phase 1's static rows. `--dynamic` rows need a live
-  boundary and degrade to `UNTESTED` with reasons when the environment
-  cannot build one. Exit codes `0/1/2` keep their Phase-1 meanings.
-- **`boundary.up` is the precondition row.** Dynamic mode starts by
-  running the launcher against a trivial target and reading the
+  facts about the launcher (fds are `CLOEXEC`, no shared channel —
+  source audits of `netns/torx-launch.c`) — no network, no namespace, no
+  build, gated on every CI run, exactly like Phase 1's static rows.
+  `--dynamic` rows run live: the floor row needs only loopback, and the
+  boundary-dependent rows degrade to `UNTESTED` with reasons when the
+  environment cannot build one. Exit codes `0/1/2` keep their Phase-1
+  meanings.
+- **The floor row runs first; `boundary.up` is the precondition for
+  everything boundary-dependent.** Dynamic mode opens with
+  `control.loopback` — a loopback connection with no boundary involved,
+  because enforcement is off by definition there: green is "the observer
+  records legitimate traffic," the floor every later "blocked" verdict is
+  read against. A floor that cannot be tested at all is `UNTESTED`; a
+  floor tested and not holding is `REFUTED` and gates — a host where
+  loopback is dead is a finding about the observation path, not an
+  environment to degrade away. Then `boundary.up` runs the launcher
+  against a trivial target and reads the
   launcher's own report — `status == "ok"` means §5's sequence
   completed (both rulesets applied and verified, every step reported);
   the report summary is the row's evidence, not a harness-side
@@ -178,9 +195,17 @@ recorded where the evidence will live (a row's `evidence` object, or
 may be answered by assumption in a document like this one.
 
 1. **CI capability.** Can the runner build a boundary at all —
-   unprivileged user namespaces, the `nft` binary, Tor? Measured by one
-   throwaway workflow (or local `unshare` trial) before any CI wiring
-   is written; until then CI wiring is deferred, not designed.
+   unprivileged user namespaces, the `nft` binary, Tor?
+   **Resolved 2026-10-02** (one throwaway workflow; full record in
+   `docs/build-notes.md`): `ubuntu-latest` — Linux 6.17.0-1022-azure,
+   uid 1001, `CapEff=0` — has `nft` (v1.0.9) and a working loopback, but
+   `unshare -Urn` fails at `uid_map` (EPERM) despite
+   `unprivileged_userns_clone=1`, `bpf()` is disabled, and there is no
+   Tor. The runner **cannot build a boundary**: CI gates the `signal.*`
+   static rows (`./tests/enforce/run.sh --static`, source audits, no
+   boundary needed) and leaves every boundary-dependent dynamic row
+   `UNTESTED (reason:)` there; `control.loopback` records wherever
+   dynamic mode runs.
 2. **Counter read privilege.** Whether the observer can read nft JSON
    counters without `CAP_NET_ADMIN` in the relevant namespace.
    Candidates, in order of preference: measure first (listing may be
@@ -189,6 +214,15 @@ may be answered by assumption in a document like this one.
    evidence, because the boundary reporting on itself is P3's original
    sin; degrade the agreement rows to `UNTESTED (reason:)` and let the
    probe-errno + Tor-control rows carry the dynamic gate.
+   **Resolved 2026-10-02** (record in `docs/build-notes.md`): no. From
+   the init userns with `CapEff=0`, host `nft list` fails at cache-init
+   (EPERM), `nsenter -t <child> -n` fails at setns (EPERM), and raw
+   `setns(CLONE_NEWNET)` is EPERM — only a read from inside the userns
+   succeeds. The fallback order above therefore stands as written:
+   launcher counter snapshot as corroboration only (P3's sin, fenced by
+   `agreement.*`), otherwise the agreement rows degrade to `UNTESTED
+   (reason:)` and the probe-errno + Tor-control rows carry the dynamic
+   gate.
 3. **Abstract `AF_UNIX` scoping** — `enforcement.md` §6's open question,
    owned by `coverage.completeness.unix` once it can run.
 4. **Unprivileged topology.** `enforcement.md` §2 draws the trusted

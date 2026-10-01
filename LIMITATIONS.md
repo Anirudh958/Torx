@@ -272,6 +272,12 @@ settle it.
 - `make check` backstops the headline claim at build time (DNS assertion:
   if `getaddrinfo` ever becomes exported, the build fails until this file
   and the assertion are updated).
+- The Phase-2 enforcement harness is gated the same way —
+  `tests/enforce/run.sh` (`tests/enforce/README.md`): its `signal.*`
+  static rows run on every PR; `control.loopback` and the boundary rows
+  record wherever dynamic mode runs, degrading to `UNTESTED (reason:)`
+  on hosts that cannot build a boundary (measured on CI runners,
+  2026-10-02 — `docs/build-notes.md`).
 
 ## 8. Fix path (why Phase 2 exists)
 

@@ -16,15 +16,16 @@
 # §polarity, where they were written first.
 #
 # Modes:
-#   --static    structural rows about the launcher (signal.* family): no
-#               network, no namespace, gated on every CI run — exactly like
-#               Phase 1's static rows. [rows land when harness §3 wiring
-#               lands; netns/torx-launch itself exists and builds]
-#   --dynamic   needs a live boundary (netns + nftables + Tor). Starts with
-#               the boundary.up precondition row — the launcher itself,
-#               run against /bin/true and verified from its report — and
-#               degrades to UNTESTED (reason:) when the environment cannot
-#               build one.
+#   --static    structural rows about the launcher (signal.* family): source
+#               audits of netns/torx-launch.c — no network, no namespace, no
+#               build — gated on every CI run, exactly like Phase 1's static
+#               rows.
+#   --dynamic   starts with the control.loopback floor row (no boundary
+#               needed: enforcement is off, so a loopback connection must be
+#               observable as succeeding), then the boundary.up precondition
+#               row — the launcher itself, run against /bin/true and
+#               verified from its report — and degrades to UNTESTED
+#               (reason:) when the environment cannot build one.
 #   (none)      both.
 #
 # Exit codes:
@@ -106,22 +107,107 @@ verdict_for() { [ "$1" = "$2" ] && printf 'VERIFIED' || printf 'REFUTED'; }
 
 # ---------------------------------------------------------------------------
 # Static mode: structural facts about the launcher — no network, no
-# namespace, gated on every CI run (docs/harness.md §4, the signal.*
-# family: fds are CLOEXEC, no shared channel, capability bits as read
-# from /proc).
+# namespace, no build, gated on every CI run (docs/harness.md §4, the
+# signal.* family). They read the source the boundary is made of, so they
+# hold wherever the repo is checked out: a runner that cannot build a
+# boundary (docs/harness.md §6 Q1, measured 2026-10-02) still gates them.
 # ---------------------------------------------------------------------------
-# Scaffold state: netns/torx-launch now exists and builds (boundary.up
-# runs it), but the signal.* rows are not written yet — there is no
-# structure to assert until they are. Record nothing — and say so
-# loudly. An empty green would be the exact failure docs/harness.md §4
-# forbids; the rows land when their assertions do, and this banner is
-# what a --static run prints until then.
+# count_re <regex> <file> — call-site counts, not line counts: line 1050
+# carries two pipe2 calls, and a call that loses its CLOEXEC flag must
+# flip the row even when its line still shows a neighbour's flag. The
+# (^|[^[:alnum:]_]) prefix excludes fopen( when counting open(; the
+# [^)]* flag match assumes one call per line — true today, and a refactor
+# that splits one flips the row, forcing the count to be re-read with it.
+count_re() { grep -oE "$1" "$2" 2>/dev/null | wc -l | tr -d ' '; }
+
 run_static() {
-    printf 'note: no signal.* structural rows yet — netns/torx-launch exists\n'
-    printf '      and boundary.up runs it, but the signal.* family (fds\n'
-    printf '      CLOEXEC, no shared channel, capability bits from /proc)\n'
-    printf '      records nothing until its assertions are wired. Recording\n'
-    printf '      nothing. See docs/harness.md §3 (signal.*) and §4.\n'
+    local src="$ROOT/netns/torx-launch.c"
+    local desc_fds="every fd the launcher creates must be CLOEXEC (one documented stdio silencer excepted), and the protocol channel must carry FD_CLOEXEC at the exec point — nothing but stdio is inherited by the target"
+    local desc_obs="the launcher must open no listening socket, AF_UNIX endpoint, FIFO, or shared mapping — no channel a wrapped-uid process could reach an observer through"
+    local notes_fds="P3 structural row (THREAT_MODEL.md §3): source audit, no build or boundary needed, so a CI runner that cannot build one still gates it (docs/harness.md §6 Q1). fopen_total is context, not a pass condition — three sites are parent-side (report, cgroup reads) and the child's uid_map fopen is fclosed on every path before execvp (uid_ok); the pass condition is the fd-creation sites plus the exec-point fcntl. A new fd-creating site without CLOEXEC flips observed, which is the falsifier."
+    local notes_obs="P3 structural row (THREAT_MODEL.md §3), launcher side only: docs/harness.md §3 — none of the signal rows proves a negative alone, the design argument carries the claim. Measured is the absence of listener/IPC surface in the launcher itself; the observer side lands with probes/. socket_client_calls is the outbound Tor port probe (SOCK_CLOEXEC, client side), recorded so a reader need not re-grep. Any new endpoint site flips observed, which is the falsifier."
+    if [ ! -f "$src" ]; then
+        record "signal.no_shared_fds" "signal" "$desc_fds" \
+            "static" "all_cloexec" "not_run" "UNTESTED" \
+            "$(jq -cn --arg r "netns/torx-launch.c absent" '{reason:$r}')" \
+            "true" "THREAT_MODEL.md#3-adversaries" \
+            "$notes_fds" "VERIFIED"
+        record "signal.observer_unreachable" "signal" "$desc_obs" \
+            "static" "no_endpoint" "not_run" "UNTESTED" \
+            "$(jq -cn --arg r "netns/torx-launch.c absent" '{reason:$r}')" \
+            "true" "THREAT_MODEL.md#3-adversaries" \
+            "$notes_obs" "VERIFIED"
+        return
+    fi
+    # no_shared_fds: every pipe2/socket/open call carries its CLOEXEC flag,
+    # except the run_argv_quiet /dev/null silencer (dup2 onto stdio, fd
+    # closed before exec), plus the explicit FD_CLOEXEC on the protocol
+    # channel at child_main's exec point.
+    local p2 p2x sk skx op opx dn ec fo bad obs_fds
+    p2=$(count_re '(^|[^[:alnum:]_])pipe2\(' "$src")
+    p2x=$(count_re 'pipe2\([^)]*O_CLOEXEC' "$src")
+    sk=$(count_re '(^|[^[:alnum:]_])socket\(' "$src")
+    skx=$(count_re '(^|[^[:alnum:]_])socket\([^)]*SOCK_CLOEXEC' "$src")
+    op=$(count_re '(^|[^[:alnum:]_])open\(' "$src")
+    opx=$(count_re '(^|[^[:alnum:]_])open\([^)]*O_CLOEXEC' "$src")
+    dn=$(count_re '(^|[^[:alnum:]_])open\("/dev/null"' "$src")
+    ec=$(count_re 'fcntl\([^)]*F_SETFD, FD_CLOEXEC\)' "$src")
+    fo=$(count_re '(^|[^[:alnum:]_])fopen\(' "$src")
+    bad=$(( (p2 - p2x) + (sk - skx) + (op - opx - dn) ))
+    obs_fds="all_cloexec"
+    [ "$bad" -gt 0 ] && obs_fds="site_without_cloexec"
+    record "signal.no_shared_fds" "signal" "$desc_fds" \
+        "static" "all_cloexec" "$obs_fds" "$(verdict_for all_cloexec "$obs_fds")" \
+        "$(jq -cn \
+            --arg tool "per-call grep of netns/torx-launch.c" \
+            --arg allowlist 'open("/dev/null") in run_argv_quiet: dup2 onto stdio, fd closed before exec' \
+            --argjson pipe2_total "$p2" --argjson pipe2_cloexec "$p2x" \
+            --argjson socket_total "$sk" --argjson socket_cloexec "$skx" \
+            --argjson open_total "$op" --argjson open_cloexec "$opx" \
+            --argjson allowlisted_matches "$dn" \
+            --argjson exec_point_fcntl_fd_cloexec "$ec" \
+            --argjson fopen_total "$fo" \
+            '{tool:$tool, pipe2_total:$pipe2_total, pipe2_cloexec:$pipe2_cloexec,
+              socket_total:$socket_total, socket_cloexec:$socket_cloexec,
+              open_total:$open_total, open_cloexec:$open_cloexec,
+              allowlist:$allowlist, allowlisted_matches:$allowlisted_matches,
+              exec_point_fcntl_fd_cloexec:$exec_point_fcntl_fd_cloexec,
+              fopen_total:$fopen_total}')" \
+        "true" "THREAT_MODEL.md#3-adversaries" \
+        "$notes_fds" "VERIFIED"
+    # observer_unreachable: zero listener/IPC surface — bind, listen,
+    # accept, AF_UNIX, FIFO, shared memory, socketpair — in the launcher.
+    local bind listen acc afunix fifo shm mmap_ pair cli ep
+    bind=$(count_re '(^|[^[:alnum:]_])bind\(' "$src")
+    listen=$(count_re '(^|[^[:alnum:]_])listen\(' "$src")
+    acc=$(count_re 'accept4?\(' "$src")
+    afunix=$(count_re 'AF_UNIX|AF_LOCAL' "$src")
+    fifo=$(count_re 'mkfifo' "$src")
+    shm=$(count_re 'shm_open' "$src")
+    mmap_=$(count_re '(^|[^[:alnum:]_])mmap\(' "$src")
+    pair=$(count_re 'socketpair\(' "$src")
+    cli=$(count_re '(^|[^[:alnum:]_])socket\(' "$src")
+    ep=$(( bind + listen + acc + afunix + fifo + shm + mmap_ + pair ))
+    local obs_ep="no_endpoint"
+    [ "$ep" -gt 0 ] && obs_ep="endpoint_present"
+    record "signal.observer_unreachable" "signal" "$desc_obs" \
+        "static" "no_endpoint" "$obs_ep" "$(verdict_for no_endpoint "$obs_ep")" \
+        "$(jq -cn \
+            --arg tool "grep of netns/torx-launch.c for listener/IPC surface" \
+            --arg socket_client_note "the socket() is the outbound Tor port probe (SOCK_CLOEXEC, client side)" \
+            --argjson bind_calls "$bind" --argjson listen_calls "$listen" \
+            --argjson accept_calls "$acc" --argjson af_unix_refs "$afunix" \
+            --argjson mkfifo_calls "$fifo" --argjson shm_open_calls "$shm" \
+            --argjson mmap_calls "$mmap_" --argjson socketpair_calls "$pair" \
+            --argjson socket_client_calls "$cli" \
+            '{tool:$tool, bind_calls:$bind_calls, listen_calls:$listen_calls,
+              accept_calls:$accept_calls, af_unix_refs:$af_unix_refs,
+              mkfifo_calls:$mkfifo_calls, shm_open_calls:$shm_open_calls,
+              mmap_calls:$mmap_calls, socketpair_calls:$socketpair_calls,
+              socket_client_calls:$socket_client_calls,
+              socket_client_note:$socket_client_note}')" \
+        "true" "THREAT_MODEL.md#3-adversaries" \
+        "$notes_obs" "VERIFIED"
 }
 
 # ---------------------------------------------------------------------------
@@ -204,30 +290,107 @@ boundary_up() {
     return 1
 }
 
+# control_loopback — the floor row (docs/harness.md §3/§4). A loopback
+# TCP connection with no boundary involved: if the observer cannot record
+# "traffic flowed" before enforcement is engaged, a later "blocked" from
+# any inverted row is indistinguishable from a dead observer. Returns 0
+# when the flow was observed. Otherwise CONTROL_UNTESTED is set (the test
+# could not run at all — UNTESTED, never gated) or CONTROL_FAIL is set
+# (the test ran and the floor did not hold — REFUTED, gated: a host where
+# loopback is dead is a finding, not an absence of test).
+CONTROL_UNTESTED=""
+CONTROL_FAIL=""
+control_loopback() {
+    CONTROL_UNTESTED=""
+    CONTROL_FAIL=""
+    if ! command -v python3 >/dev/null 2>&1; then
+        CONTROL_UNTESTED="python3 not found (loopback listener)"
+        return 1
+    fi
+    if ! command -v timeout >/dev/null 2>&1; then
+        CONTROL_UNTESTED="timeout not found (loopback listener)"
+        return 1
+    fi
+    if timeout 10 python3 - >"$BUILD/loopback.out" 2>&1 <<'PY'
+import socket, sys
+srv = socket.socket()
+try:
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    cli = socket.socket()
+    cli.settimeout(5)
+    try:
+        cli.connect(("127.0.0.1", srv.getsockname()[1]))
+        conn, _ = srv.accept()
+        conn.close()
+    finally:
+        cli.close()
+except OSError as e:
+    print(repr(e))
+    sys.exit(1)
+finally:
+    srv.close()
+PY
+    then
+        return 0
+    fi
+    CONTROL_FAIL=$(tail -n1 "$BUILD/loopback.out" 2>/dev/null)
+    [ -n "$CONTROL_FAIL" ] || \
+        CONTROL_FAIL="loopback connect failed (see tests/enforce/.build/loopback.out)"
+    return 1
+}
+
 run_dynamic() {
+    # Floor row first (docs/harness.md §3/§4): it needs no boundary, so it
+    # runs before the precondition row rather than after it — enforcement
+    # is off by definition here, and green is "the observer records
+    # legitimate traffic".
+    local desc_loop="with enforcement not yet engaged, a loopback TCP connection must be observable as succeeding — the floor every later 'blocked' verdict is read against"
+    local notes_floor="Floor row (docs/harness.md §3/§4): runs before boundary.up because it needs no boundary. Green here is the observation path, not the boundary — a coverage.* 'blocked' claim means 'flowing was demonstrable' only once this row is VERIFIED, never merely 'nothing got out'."
+    if control_loopback; then
+        record "control.loopback" "control" "$desc_loop" \
+            "dynamic" "flows" "flows" "VERIFIED" \
+            '{"tool":"python3 bind/listen/connect/accept on 127.0.0.1","rc":0}' \
+            "true" "docs/harness.md#3-row-families--targets-not-measurements" \
+            "$notes_floor" "VERIFIED"
+    elif [ -n "$CONTROL_UNTESTED" ]; then
+        record "control.loopback" "control" "$desc_loop" \
+            "dynamic" "flows" "not_run" "UNTESTED" \
+            "$(jq -cn --arg r "$CONTROL_UNTESTED" '{reason:$r}')" \
+            "true" "docs/harness.md#3-row-families--targets-not-measurements" \
+            "$notes_floor The test could not run at all — evidence.reason names the missing piece. UNTESTED is a claim of absence of test, never a claim of correctness; the gate skips it by construction." \
+            "VERIFIED"
+    else
+        record "control.loopback" "control" "$desc_loop" \
+            "dynamic" "flows" "not_flowing" "REFUTED" \
+            "$(jq -cn --arg r "$CONTROL_FAIL" '{reason:$r}')" \
+            "true" "docs/harness.md#3-row-families--targets-not-measurements" \
+            "$notes_floor Tested and the floor did not hold — this gates, by design: a host where loopback traffic cannot be observed is a finding about the observation path, not an environment to degrade away." \
+            "VERIFIED"
+    fi
     if boundary_up; then
         record "boundary.up" "boundary" \
-            "the launcher must complete docs/enforcement.md §5's fail-closed sequence before any other dynamic row runs" \
+            "the launcher must complete docs/enforcement.md §5's fail-closed sequence before any boundary-dependent dynamic row runs" \
             "dynamic" "up" "up" "VERIFIED" \
             "$BOUNDARY_EVIDENCE" \
             "true" "docs/enforcement.md#5-fail-closed-launch-sequence" \
-            "Precondition row (docs/harness.md §4): dynamic mode starts here. Evidence is the launcher's own report — mode, target exit, all nine §5 steps — not a harness-side assertion about it." \
+            "Precondition row (docs/harness.md §4): the floor row (control.loopback) runs first because it needs no boundary; the boundary-dependent rows start here. Evidence is the launcher's own report — mode, target exit, all nine §5 steps — not a harness-side assertion about it." \
             "VERIFIED"
     else
         record "boundary.up" "boundary" \
-            "the launcher must complete docs/enforcement.md §5's fail-closed sequence before any other dynamic row runs" \
+            "the launcher must complete docs/enforcement.md §5's fail-closed sequence before any boundary-dependent dynamic row runs" \
             "dynamic" "up" "not_run" "UNTESTED" \
             "$(jq -cn --arg r "$BOUNDARY_REASON" '{reason:$r}')" \
             "true" "docs/enforcement.md#5-fail-closed-launch-sequence" \
-            "Precondition row (docs/harness.md §4): dynamic mode starts here, and no other dynamic row means anything until this one is VERIFIED. UNTESTED when the environment cannot stand the boundary up — every unmet prerequisite or abort step is named in evidence.reason, measured at run time, never assumed. expected_verdict is VERIFIED: on a host with prerequisites this row must pass. Observed UNTESTED is skipped by the gate by construction — absence of test is never correctness — so the documented expectation is never downgraded to match an environment." \
+            "Precondition row (docs/harness.md §4): the floor row runs first, and no other boundary-dependent dynamic row means anything until this one is VERIFIED. UNTESTED when the environment cannot stand the boundary up — every unmet prerequisite or abort step is named in evidence.reason, measured at run time, never assumed. expected_verdict is VERIFIED: on a host with prerequisites this row must pass. Observed UNTESTED is skipped by the gate by construction — absence of test is never correctness — so the documented expectation is never downgraded to match an environment." \
             "VERIFIED"
     fi
     # The other families (disable.*, coverage.completeness.*, backstop.*,
-    # signal.* dynamics, agreement.*, control.*) are defined in
-    # docs/harness.md §3 and are recorded here the day each is first
-    # measured — docs/harness.md §7: harness first so an ID or an evidence
-    # key has somewhere to land. The observer loop itself (§1: verdicts
-    # collected host-side) arrives with probes/.
+    # signal.* observer-side rows, agreement.*, control.* paired rows) are
+    # defined in docs/harness.md §3 and are recorded here the day each is
+    # first measured — docs/harness.md §7: harness first so an ID or an
+    # evidence key has somewhere to land. The observer loop itself (§1:
+    # verdicts collected host-side) arrives with probes/.
 }
 
 # ---------------------------------------------------------------------------

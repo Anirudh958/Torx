@@ -18,12 +18,15 @@ artifacts:
 **Status (read before citing anything here).** The boundary primitive
 (`netns/torx-launch`, [`docs/enforcement.md`](../../docs/enforcement.md)
 §5) exists and builds; `boundary.up` runs it and is `VERIFIED` wherever
-the host can stand the boundary up. The other row families defined in
-`docs/harness.md` §3 (`disable.*`, `coverage.*`, `backstop.*`,
-`signal.*`, `agreement.*`, `control.*`) land the day each is first
-measured, under the §7 sequence: harness first, so an ID has somewhere
-to land — then the primitive, then the probe. Nothing here is green by
-default; see §4 of the harness doc.
+the host can stand the boundary up. The `signal.*` structural rows
+(`--static`: source audits of `netns/torx-launch.c`) and the
+`control.loopback` floor row (`--dynamic`, no boundary needed) have
+landed. The remaining row families defined in `docs/harness.md` §3
+(`disable.*`, `coverage.*`, `backstop.*`, `agreement.*`, paired
+`control.*` positives) land the day each is first measured, under the §7
+sequence: harness first, so an ID has somewhere to land — then the
+primitive, then the probe. Nothing here is green by default; see §4 of
+the harness doc.
 
 ## Modes
 
@@ -52,9 +55,47 @@ modes, lab first ([`docs/enforcement.md`](../../docs/enforcement.md)
 scoped to `UNTESTED (reason:)` in their own rows when those rows land
 (`docs/harness.md` §6, question 4).
 
+## `control.loopback` — the floor row
+
+Dynamic mode's first row (`docs/harness.md` §3/§4): a loopback TCP
+connection with no boundary involved — enforcement is off by definition
+there. Green is the observer recording legitimate traffic: the floor
+every later "blocked" verdict is read against, so a coverage row's
+"blocked" means "flowing was demonstrable," never merely "nothing got
+out." Three outcomes, recorded before `boundary.up`: observed flow →
+`VERIFIED`; test ran and the flow was not observed → `REFUTED`
+(**gates** — a host where loopback is dead is a finding about the
+observation path, not an environment to degrade away); `python3` or
+`timeout` missing, or the script errored before connecting →
+`UNTESTED` (evidence.reason names the missing piece; never gated).
+
+## `signal.*` — the static structural rows
+
+`--static` (`docs/harness.md` §4): source audits of
+`netns/torx-launch.c`, no network, no namespace, no build — gated on
+every CI run like Phase 1's static rows.
+
+- `signal.no_shared_fds` — every `pipe2`/`socket`/`open` call site
+  carries its CLOEXEC flag (one allowlisted stdio silencer:
+  `open("/dev/null")` in `run_argv_quiet`), and the protocol channel
+  carries `FD_CLOEXEC` at the exec point. Counted per call, not per
+  line — line 1050 carries two `pipe2` calls, and a call that loses its
+  flag must flip the row even where a neighbour still shows one.
+- `signal.observer_unreachable` — zero listener/IPC surface: no `bind`,
+  `listen`, `accept`, `AF_UNIX`, `mkfifo`, `shm_open`, `mmap`, or
+  `socketpair`. The single `socket()` in the file is the outbound Tor
+  port probe (client side, `SOCK_CLOEXEC`), recorded so a reader need
+  not re-grep.
+
+Both are P3's structural half (`THREAT_MODEL.md` §3): neither proves a
+negative alone — none claims to; the design argument carries the claim,
+the rows make it falsifiable. Source absent → `UNTESTED (reason:)`,
+never a vacuous green.
+
 ## `boundary.up` — the precondition row
 
-Dynamic mode starts here (`docs/harness.md` §4). The row is the
+The floor row runs first; this is where the boundary-dependent rows
+start (`docs/harness.md` §4). The row is the
 launcher itself: `boundary_up()` builds `netns/torx-launch` if needed
 (through `netns/Makefile`), runs it against `/bin/true`, and decides
 from the launcher's report — `status == "ok"` is `VERIFIED`, with
@@ -64,7 +105,8 @@ cannot stand the boundary up, `observed=not_run`, `verdict=UNTESTED`,
 and `evidence.reason` names **every** unmet prerequisite — or, when the
 launcher itself aborts fail-closed, the abort step and reason read back
 from its report — each measured at run time, never assumed. No other
-dynamic row means anything until this one is `VERIFIED`.
+boundary-dependent dynamic row means anything until this one is
+`VERIFIED`.
 `expected_verdict` is `VERIFIED`: on a host with prerequisites the row
 must pass, and observed `UNTESTED` is skipped by the gate by
 construction, so the documented expectation is never downgraded to
@@ -123,8 +165,10 @@ fresh row is a defect in the document, not evidence.
 
 ## Requirements
 
-`jq`. `--static` needs nothing else. `--dynamic` additionally needs the
-boundary itself (`docs/enforcement.md` §5): user namespaces, `nft`, a
+`jq`. `--static` additionally needs `grep` only. `--dynamic`'s floor
+row needs `python3` and `timeout` (missing → the floor records
+`UNTESTED`, never a silent green); the boundary rows need the boundary
+itself (`docs/enforcement.md` §5): user namespaces, `nft`, a
 C compiler and `make` (to build `netns/torx-launch` if missing), Tor on
 `127.0.0.1:9050` — missing pieces degrade the run to `UNTESTED`, they
 never fail it.

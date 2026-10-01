@@ -189,6 +189,10 @@ Consequences, recorded as found:
   the one dynamic row with real CI reach. CI wiring for `tests/enforce`
   stays deferred until there are `signal.*`/`control.*` rows to wire —
   the capability question §6.1 gated on is now answered.
+  **Wired 2026-10-02, same chunk that landed those rows:** the static
+  job runs `./tests/enforce/run.sh --static` (the `signal.*` source
+  audits — no boundary, no network); the floor row records wherever
+  dynamic mode runs.
 
 ## Q2: can the observer read the child's nft counters?
 

@@ -296,16 +296,18 @@ questions get different answers — §6.1 walks this list.
 | `TORX-DET-udp2-1` (in-process) | udp-correctness | stable | **yes** — executed by `run.sh` | `row` | `udp.fd_swap`, `udp.silent_misdelivery`, `udp.connect_hijack` |
 | `TORX-DET-ipv6-1` (auditd) | ipv6 | stable | no — auditd absent | `row` | `ipv6.passthrough` |
 | `TORX-DET-bnd-1` (nft counters) | boundary | experimental | no — no boundary on this host | `draft` | planned: `backstop.*`, `coverage.completeness.*` |
-| `TORX-DET-bnd-2` (intent feed) | boundary | experimental | no — no BPF sensor | `draft` | planned: `signal.*` |
+| `TORX-DET-bnd-2` (intent feed) | boundary | experimental | no — no BPF sensor | `draft` | planned: intent-feed row (unlanded) |
 | `TORX-DET-bnd-3` (agreement gap) | boundary | experimental | no — needs both layers | `draft` | planned: `agreement.*` |
-| `TORX-DET-bnd-4` (fail-closed abort) | boundary | experimental | no — launcher unbuilt | `draft` | planned: `boundary.up` |
+| `TORX-DET-bnd-4` (fail-closed abort) | boundary | experimental | no — abort path not exercised (boundary comes up here) | `draft` | `boundary.up` (committed — abort path not its own row) |
 
 `Validated by` is a machine-readable enum: **`row`** = a committed
 `results.jsonl` row re-checks this rule's claim on every harness run;
 **`draft`** = written and source-reviewed only, nothing mechanical ties
 it to the evidence (only `tcp-2`, because the SOCKS4a-on-the-wire claim
-has never been captured — and the four `bnd-*` rules, whose Phase-2
-rows are specified in `docs/harness.md` §3 but not yet committed).
+has never been captured — and the four `bnd-*` rules: `boundary.up`,
+`signal.*`, and `control.loopback` are committed rows now, but none of
+them asserts a `bnd-*` rule's specific claim yet — counter deltas,
+intent feed, agreement, abort loudness — so all four stay `draft`).
 `none` is reserved for a rule with no evidence trail at all — there
 are none. `Status` is the phenomenon, `Executed?` is the detector: the
 two stay separate on purpose.
@@ -321,12 +323,13 @@ This section is the rest of that sentence — what a defender sees *on*
 the replacement.
 
 **Status: every rule in §6.2 is `status: experimental`,
-`Executed? = no`, `Validated by: draft`.** No Phase-2 row exists yet:
-the harness that will cite them is a spec (`docs/harness.md`), the
-primitive it measures is unbuilt (`docs/enforcement.md`). Each rule
-names the row that will validate it and stays `draft` until that row
-is committed. The §1 axes apply unchanged — this section's claims are
-expectations of the design, not measurements.
+`Executed? = no`, `Validated by: draft`.** The Phase-2 primitive is
+built (`netns/torx-launch`; `boundary.up` is `VERIFIED` wherever the
+host can stand the boundary up) and the harness records rows
+(`tests/enforce/results.jsonl`) — but no committed row asserts these
+rules' specific claims yet. Each rule names the row that will validate
+it and stays `draft` until that row lands. The §1 axes apply unchanged —
+this section's claims are expectations of the design, not measurements.
 
 ### 6.1 The vantage point changes sides
 
