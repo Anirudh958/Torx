@@ -15,15 +15,15 @@ artifacts:
 | `results.jsonl` | machines, reviewers, `jq`, CI diffing — one record per line |
 | `results.md` | humans, slides — rendered table |
 
-**Scaffold status (read before citing anything here).** The primitive
-does not exist yet (`netns/` is unwritten), so this harness currently
-records exactly one row — the `boundary.up` precondition — and it is
-`UNTESTED (reason:)` on any host that cannot build a boundary. Every
-other row family defined in `docs/harness.md` §3 (`disable.*`,
-`coverage.*`, `backstop.*`, `signal.*`, `agreement.*`, `control.*`) lands
-the day it is first measured, under the §7 sequence: harness first, so
-an ID has somewhere to land — then the primitive, then the probe.
-Nothing here is green by default; see §4 of the harness doc.
+**Status (read before citing anything here).** The boundary primitive
+(`netns/torx-launch`, [`docs/enforcement.md`](../../docs/enforcement.md)
+§5) exists and builds; `boundary.up` runs it and is `VERIFIED` wherever
+the host can stand the boundary up. The other row families defined in
+`docs/harness.md` §3 (`disable.*`, `coverage.*`, `backstop.*`,
+`signal.*`, `agreement.*`, `control.*`) land the day each is first
+measured, under the §7 sequence: harness first, so an ID has somewhere
+to land — then the primitive, then the probe. Nothing here is green by
+default; see §4 of the harness doc.
 
 ## Modes
 
@@ -48,20 +48,27 @@ is recorded in [`docs/build-notes.md`](../../docs/build-notes.md)
 namespaces, veth, and nftables all work (`nft` lives at `/usr/sbin/nft`,
 outside a normal user `PATH`). The topology question is resolved as two
 modes, lab first ([`docs/enforcement.md`](../../docs/enforcement.md)
-§2.1); the open item is the launcher itself, and lab mode's unreachable
-halves — sensor attach, child→Tor — are scoped to `UNTESTED (reason:)`
+§2.1); lab mode's unreachable halves — sensor attach, child→Tor — are
+scoped to `UNTESTED (reason:)` in their own rows when those rows land
 (`docs/harness.md` §6, question 4).
 
 ## `boundary.up` — the precondition row
 
-Dynamic mode starts here (`docs/harness.md` §4). `observed=not_run` and
-`verdict=UNTESTED` with `evidence.reason` naming **every** unmet
-prerequisite, each measured at run time (netns tree, user namespaces,
-`nft`, …), never assumed. No other dynamic row means anything until this
-one is `VERIFIED`. It flips when the launcher completes
-[`docs/enforcement.md` §5](../../docs/enforcement.md) and the harness is
-wired to verify it — `expected_verdict` moves in the same commit
-(stale-verdict policy below).
+Dynamic mode starts here (`docs/harness.md` §4). The row is the
+launcher itself: `boundary_up()` builds `netns/torx-launch` if needed
+(through `netns/Makefile`), runs it against `/bin/true`, and decides
+from the launcher's report — `status == "ok"` is `VERIFIED`, with
+`evidence` carrying the report summary (mode, target exit, all nine §5
+steps) rather than a harness-side assertion about it. On any host that
+cannot stand the boundary up, `observed=not_run`, `verdict=UNTESTED`,
+and `evidence.reason` names **every** unmet prerequisite — or, when the
+launcher itself aborts fail-closed, the abort step and reason read back
+from its report — each measured at run time, never assumed. No other
+dynamic row means anything until this one is `VERIFIED`.
+`expected_verdict` is `VERIFIED`: on a host with prerequisites the row
+must pass, and observed `UNTESTED` is skipped by the gate by
+construction, so the documented expectation is never downgraded to
+match an environment.
 
 ## Polarity: enforcement
 
@@ -117,9 +124,10 @@ fresh row is a defect in the document, not evidence.
 ## Requirements
 
 `jq`. `--static` needs nothing else. `--dynamic` additionally needs the
-boundary itself (`docs/enforcement.md` §5): user namespaces, `nft`, the
-`netns/` launcher, Tor on `127.0.0.1:9050` — missing pieces degrade the
-run to `UNTESTED`, they never fail it.
+boundary itself (`docs/enforcement.md` §5): user namespaces, `nft`, a
+C compiler and `make` (to build `netns/torx-launch` if missing), Tor on
+`127.0.0.1:9050` — missing pieces degrade the run to `UNTESTED`, they
+never fail it.
 
 Temporary build output lives in `.build/` (not committed).
 

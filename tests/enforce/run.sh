@@ -18,10 +18,13 @@
 # Modes:
 #   --static    structural rows about the launcher (signal.* family): no
 #               network, no namespace, gated on every CI run — exactly like
-#               Phase 1's static rows. [scaffold: rows land with netns/]
+#               Phase 1's static rows. [rows land when harness §3 wiring
+#               lands; netns/torx-launch itself exists and builds]
 #   --dynamic   needs a live boundary (netns + nftables + Tor). Starts with
-#               the boundary.up precondition row; degrades to UNTESTED
-#               (reason:) when the environment cannot build one.
+#               the boundary.up precondition row — the launcher itself,
+#               run against /bin/true and verified from its report — and
+#               degrades to UNTESTED (reason:) when the environment cannot
+#               build one.
 #   (none)      both.
 #
 # Exit codes:
@@ -107,16 +110,18 @@ verdict_for() { [ "$1" = "$2" ] && printf 'VERIFIED' || printf 'REFUTED'; }
 # family: fds are CLOEXEC, no shared channel, capability bits as read
 # from /proc).
 # ---------------------------------------------------------------------------
-# Scaffold state: the launcher does not exist yet, so there is no
-# structure to assert. Record nothing — and say so loudly. An empty
-# green would be the exact failure docs/harness.md §4 forbids; the rows
-# land the day their subject does, and this banner is what a --static run
-# prints until then.
+# Scaffold state: netns/torx-launch now exists and builds (boundary.up
+# runs it), but the signal.* rows are not written yet — there is no
+# structure to assert until they are. Record nothing — and say so
+# loudly. An empty green would be the exact failure docs/harness.md §4
+# forbids; the rows land when their assertions do, and this banner is
+# what a --static run prints until then.
 run_static() {
-    printf 'note: no signal.* structural rows yet — they assert facts about\n'
-    printf '      the netns/launcher (fds CLOEXEC, no shared channel, capability\n'
-    printf '      bits from /proc) and land with it. Recording nothing.\n'
-    printf '      See docs/harness.md §3 (signal.*) and §4.\n'
+    printf 'note: no signal.* structural rows yet — netns/torx-launch exists\n'
+    printf '      and boundary.up runs it, but the signal.* family (fds\n'
+    printf '      CLOEXEC, no shared channel, capability bits from /proc)\n'
+    printf '      records nothing until its assertions are wired. Recording\n'
+    printf '      nothing. See docs/harness.md §3 (signal.*) and §4.\n'
 }
 
 # ---------------------------------------------------------------------------
@@ -141,9 +146,15 @@ have_nft() {
     return 1
 }
 
+# BOUNDARY_EVIDENCE: on success, the launcher report's summary, used
+# verbatim as the row's evidence (mode, target exit, the nine §5 steps);
+# on failure it stays empty and BOUNDARY_REASON names the abort step —
+# read from the report when the launcher wrote one, because a
+# fail-closed abort is evidence, not prose.
 BOUNDARY_REASON=""
+BOUNDARY_EVIDENCE=""
 boundary_up() {
-    local missing=()
+    local missing=() rc=0
     [ -d "$ROOT/netns" ] || missing+=("netns/ tree absent (docs/enforcement.md §5 unimplemented)")
     if ! command -v unshare >/dev/null 2>&1; then
         missing+=("unshare binary not found in PATH")
@@ -156,11 +167,40 @@ boundary_up() {
         BOUNDARY_REASON=${BOUNDARY_REASON%; }
         return 1
     fi
-    # All prerequisites present — but the harness is not yet wired to
-    # launch the boundary (scaffold). 6b replaces this with the actual
-    # launch + §5 verification, and BOUNDARY_REASON="launcher aborted at
-    # step N" on a fail-closed abort.
-    BOUNDARY_REASON="prerequisites present, but the harness cannot yet launch the boundary (scaffold)"
+    # Build the launcher through netns/Makefile (the canonical build —
+    # -Werror warning set, README.md); reuse an existing binary, like
+    # tests/leak's probes, so a rebuild only happens when needed.
+    if [ ! -x "$ROOT/netns/torx-launch" ]; then
+        if ! command -v make >/dev/null 2>&1; then
+            BOUNDARY_REASON="make not found (cannot build netns/torx-launch)"
+            return 1
+        fi
+        if ! make -C "$ROOT/netns" >"$BUILD/launcher.build.log" 2>&1; then
+            BOUNDARY_REASON="netns/torx-launch build failed (see tests/enforce/.build/launcher.build.log)"
+            return 1
+        fi
+    fi
+    # Launch docs/enforcement.md §5 with the harness's own target. The
+    # exit code alone is not the verdict — a target that itself exits
+    # non-zero completed §5 — so the report's status field decides.
+    timeout 30 "$ROOT/netns/torx-launch" \
+        --report "$BUILD/boundary-report.json" -- /bin/true \
+        >"$BUILD/launcher.out" 2>"$BUILD/launcher.err" || rc=$?
+    if [ "$rc" -eq 0 ] && [ -s "$BUILD/boundary-report.json" ] &&
+        jq -e '.status == "ok"' "$BUILD/boundary-report.json" >/dev/null 2>&1; then
+        BOUNDARY_EVIDENCE=$(jq -c \
+            '{launch:"completed",mode,mode_reason,target_exit,sensor,cgroup,steps}' \
+            "$BUILD/boundary-report.json")
+        return 0
+    fi
+    if [ -s "$BUILD/boundary-report.json" ] &&
+        jq -e . "$BUILD/boundary-report.json" >/dev/null 2>&1; then
+        BOUNDARY_REASON=$(jq -r \
+            '"launcher aborted at step \(.step // "unknown"): \(.reason // "no reason recorded")"' \
+            "$BUILD/boundary-report.json")
+    else
+        BOUNDARY_REASON="launcher exited rc=$rc without a report (see tests/enforce/.build/launcher.err)"
+    fi
     return 1
 }
 
@@ -169,9 +209,9 @@ run_dynamic() {
         record "boundary.up" "boundary" \
             "the launcher must complete docs/enforcement.md §5's fail-closed sequence before any other dynamic row runs" \
             "dynamic" "up" "up" "VERIFIED" \
-            '{"launch":"completed"}' \
+            "$BOUNDARY_EVIDENCE" \
             "true" "docs/enforcement.md#5-fail-closed-launch-sequence" \
-            "Precondition row (docs/harness.md §4): dynamic mode starts here." \
+            "Precondition row (docs/harness.md §4): dynamic mode starts here. Evidence is the launcher's own report — mode, target exit, all nine §5 steps — not a harness-side assertion about it." \
             "VERIFIED"
     else
         record "boundary.up" "boundary" \
@@ -179,8 +219,8 @@ run_dynamic() {
             "dynamic" "up" "not_run" "UNTESTED" \
             "$(jq -cn --arg r "$BOUNDARY_REASON" '{reason:$r}')" \
             "true" "docs/enforcement.md#5-fail-closed-launch-sequence" \
-            "Precondition row (docs/harness.md §4): dynamic mode starts here, and no other dynamic row means anything until this one is VERIFIED. UNTESTED while the boundary is unbuilt — every unmet prerequisite is named in evidence.reason, measured at run time, never assumed. Flips to VERIFIED when the launcher lands; expected_verdict updates in the same change (stale-verdict policy, README.md)." \
-            "UNTESTED"
+            "Precondition row (docs/harness.md §4): dynamic mode starts here, and no other dynamic row means anything until this one is VERIFIED. UNTESTED when the environment cannot stand the boundary up — every unmet prerequisite or abort step is named in evidence.reason, measured at run time, never assumed. expected_verdict is VERIFIED: on a host with prerequisites this row must pass. Observed UNTESTED is skipped by the gate by construction — absence of test is never correctness — so the documented expectation is never downgraded to match an environment." \
+            "VERIFIED"
     fi
     # The other families (disable.*, coverage.completeness.*, backstop.*,
     # signal.* dynamics, agreement.*, control.*) are defined in

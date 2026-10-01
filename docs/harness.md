@@ -113,8 +113,11 @@ from egress.
   boundary and degrade to `UNTESTED` with reasons when the environment
   cannot build one. Exit codes `0/1/2` keep their Phase-1 meanings.
 - **`boundary.up` is the precondition row.** Dynamic mode starts by
-  verifying the launcher completed §5's sequence (both rulesets
-  present, attach verified). A launcher that aborts fail-closed leaves
+  running the launcher against a trivial target and reading the
+  launcher's own report — `status == "ok"` means §5's sequence
+  completed (both rulesets applied and verified, every step reported);
+  the report summary is the row's evidence, not a harness-side
+  assertion about it. A launcher that aborts fail-closed leaves
   a reason, not a verdict — the run reports `UNTESTED (reason: launcher
   aborted at step N)` loudly, the way the dirty-tree note reports
   regeneration (`tests/leak/run.sh`): silence must be loud.
