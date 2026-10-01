@@ -99,10 +99,12 @@ left non-static surfaces as a build warning before it ever becomes an export.
 ### 7. Toolchain realities on the reference host
 
 - GCC 14.2, `-Werror` clean.
-- `strace` and `nft` are **absent**. The leak harness is designed not to
-  need either: the `TORX_PORT=1` trick makes interception observable as a
-  failed connect (see `tests/leak/README.md`), so no syscall tracing and no
-  packet capture are required for the CI gate.
+- `strace` is **absent**; `nft` exists but outside the default user `PATH`
+  (`/usr/sbin/nft` — a failing `command -v nft` reads as absence; see the
+  Phase-2 trial below). The leak harness needs neither: the `TORX_PORT=1`
+  trick makes interception observable as a failed connect (see
+  `tests/leak/README.md`), so no syscall tracing and no packet capture are
+  required for the CI gate.
 - `gcc -static` works — needed by the `bypass.static_binary` probe.
 - The tree is not always a git repo: `GIT_REV` falls back to `nogit`.
 
@@ -118,29 +120,36 @@ with the shim when wrapping real applications (the loader picks one
 *measured*, never asserted: "Measured by one throwaway workflow (or local
 `unshare` trial) before any CI wiring is written; until then CI wiring is
 deferred, not designed." The local half of that measurement happened on
-2026-10-01, before any `netns/` code existed:
+2026-10-01, before any `netns/` code existed. (The first pass got `nft`
+wrong: `command -v nft` failing was a `PATH` gap, not an absence. The
+table below is the corrected measurement — kept honest rather than tidy.)
 
 | check | result | how |
 |---|---|---|
 | unprivileged user namespaces | **yes** | `sysctl kernel.unprivileged_userns_clone` = 1; `unshare -Urn id` → `uid=0` in a fresh userns+netns |
-| veth + address + default route inside a userns netns | **yes** | `ip link add … type veth`, `addr add`, `route add default` all succeeded inside `unshare -Urn` |
-| `nft` binary | **absent** | `command -v nft` fails — the same absence gotcha #7 records for the leak harness |
-| `ip`, `unshare`, `jq`, `timeout` | present | `ip`/`unshare` verified by use; `jq`/`timeout` used by both harnesses |
+| veth + addressing + default route inside a userns netns | **yes** | `ip link add … type veth`, `addr add`, `route add default` all succeeded inside `unshare -Urn` |
+| `nft` — full child-side ruleset | **yes** | binary at `/usr/sbin/nft` (v1.1.3), **outside a normal user `PATH`** — `command -v nft` fails while `/usr/sbin/nft` works. Inside `unshare -Urn`: `table inet` + a nat chain with `dnat ip to …` + a `filter` chain with policy drop, listed back via `nft list ruleset` |
+| `ip`, `tc`, `jq`, `timeout` | present | `/usr/bin/ip`, `/usr/sbin/tc` (also `PATH`-gapped), verified by use |
+| `clang` | present, versioned | `/usr/bin/clang-18` and `/usr/lib/llvm-18/bin/clang` — no unversioned `clang` |
+| `bpftool`, `strace` | **absent** | no binary anywhere — the cgroup-BPF attach needs its own loader (or libbpf), not just a compiler |
 | Tor on `127.0.0.1:9050` | up | local daemon, same one the `tests/leak` rows use |
 | `CAP_NET_RAW` | no | same absence the leak harness records; pcap stays out of verdicts (`docs/harness.md` §7) |
 
-Also absent on this host: `clang`, `bpftool`, `tc` — the cgroup-BPF half
-of `docs/enforcement.md` cannot be built or attached here either
-(`docs/enforcement.md` §7's residue rows are what will state that as
-evidence rather than as a footnote).
-
 Consequences, recorded as found:
 
-- The **namespace half** of the boundary is buildable unprivileged on
-  this host; the **netfilter half** is not, until `nft` exists.
-  `tests/enforce`'s `boundary.up` row computes exactly this split at run
-  time and reports `UNTESTED (reason:)` with each unmet prerequisite
-  named — never silently green, never falsely red (`docs/harness.md` §4).
+- **The entire child-side boundary builds unprivileged on this host** —
+  namespace, veth, addressing, route, inet nat+filter with DNAT and
+  default drop, verification listing. Not buildable yet: the cgroup-BPF
+  half (no `bpftool`; `clang-18` exists, so the open piece is a loader,
+  not a compiler), and the **path from an unprivileged child netns to
+  the host's Tor** — a veth end cannot be moved into the host network
+  namespace without privilege there, and no other link exists. That gap
+  is a topology question about `docs/enforcement.md` §2 as drawn; it is
+  logged as `docs/harness.md` §6's open question 4, and `netns/` should
+  not be written before it is resolved.
+- `tests/enforce`'s `boundary.up` row computes the prerequisites at run
+  time and reports `UNTESTED (reason:)` naming each unmet one — never
+  silently green, never falsely red (`docs/harness.md` §4).
 - **CI half: still unmeasured.** The local trial answers "can *this
   host* build a boundary"; it says nothing about a hosted runner. CI
   wiring for `tests/enforce` therefore stays *deferred, not designed* —

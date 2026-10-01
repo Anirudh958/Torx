@@ -188,6 +188,22 @@ may be answered by assumption in a document like this one.
    probe-errno + Tor-control rows carry the dynamic gate.
 3. **Abstract `AF_UNIX` scoping** — `enforcement.md` §6's open question,
    owned by `coverage.completeness.unix` once it can run.
+4. **Unprivileged topology.** `enforcement.md` §2 draws the trusted
+   side in the host network namespace (veth end, backstop, Tor all
+   there), which needs `CAP_NET_ADMIN` in that namespace — root —
+   while §6.1 asks whether *unprivileged* user namespaces suffice. The
+   two are not compatible as written. Measured 2026-10-01 (recorded in
+   `docs/build-notes.md`): the entire child side — netns, veth pair,
+   addressing, default route, `inet` nat+filter with DNAT, default
+   drop, `nft list` — builds inside `unshare -Urn` without privilege;
+   but a veth end cannot be moved into the host netns without
+   privilege there, so an unprivileged child has no path to the host's
+   Tor. Resolution required before `netns/` is written: a privileged
+   launch (root once, §2 exactly as drawn), a lab topology (trusted
+   side = a second userns-owned netns; real-Tor rows degrade to
+   `UNTESTED (reason:)` until a bridge exists), or a userspace bridge
+   (slirp-style, fd-passed from the host phase). Whichever is chosen,
+   §2 and §5 of `enforcement.md` change here first — not in code.
 
 ## 7. Non-goals
 
