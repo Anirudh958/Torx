@@ -112,6 +112,41 @@ left non-static surfaces as a build warning before it ever becomes an export.
 with the shim when wrapping real applications (the loader picks one
 `connect`); use it for unit-test binaries only.
 
+## Phase-2: can this host build a boundary?
+
+`docs/harness.md` §6.1 requires the CI-capability question to be
+*measured*, never asserted: "Measured by one throwaway workflow (or local
+`unshare` trial) before any CI wiring is written; until then CI wiring is
+deferred, not designed." The local half of that measurement happened on
+2026-10-01, before any `netns/` code existed:
+
+| check | result | how |
+|---|---|---|
+| unprivileged user namespaces | **yes** | `sysctl kernel.unprivileged_userns_clone` = 1; `unshare -Urn id` → `uid=0` in a fresh userns+netns |
+| veth + address + default route inside a userns netns | **yes** | `ip link add … type veth`, `addr add`, `route add default` all succeeded inside `unshare -Urn` |
+| `nft` binary | **absent** | `command -v nft` fails — the same absence gotcha #7 records for the leak harness |
+| `ip`, `unshare`, `jq`, `timeout` | present | `ip`/`unshare` verified by use; `jq`/`timeout` used by both harnesses |
+| Tor on `127.0.0.1:9050` | up | local daemon, same one the `tests/leak` rows use |
+| `CAP_NET_RAW` | no | same absence the leak harness records; pcap stays out of verdicts (`docs/harness.md` §7) |
+
+Also absent on this host: `clang`, `bpftool`, `tc` — the cgroup-BPF half
+of `docs/enforcement.md` cannot be built or attached here either
+(`docs/enforcement.md` §7's residue rows are what will state that as
+evidence rather than as a footnote).
+
+Consequences, recorded as found:
+
+- The **namespace half** of the boundary is buildable unprivileged on
+  this host; the **netfilter half** is not, until `nft` exists.
+  `tests/enforce`'s `boundary.up` row computes exactly this split at run
+  time and reports `UNTESTED (reason:)` with each unmet prerequisite
+  named — never silently green, never falsely red (`docs/harness.md` §4).
+- **CI half: still unmeasured.** The local trial answers "can *this
+  host* build a boundary"; it says nothing about a hosted runner. CI
+  wiring for `tests/enforce` therefore stays *deferred, not designed* —
+  a throwaway workflow remains the measurement §6.1 asks for, whenever
+  pushes resume.
+
 ## Reproducing the artifact
 
 ```sh
