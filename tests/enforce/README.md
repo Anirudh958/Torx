@@ -189,6 +189,13 @@ rows implement the scoped claim (`docs/harness.md` §3):
   *with* the capability that *does* succeed, so evidence shows both
   outcomes — otherwise the row is a claim about a probe that might be
   broken.
+- **Polarity echo:** each row states its polarity locally (a
+  `"polarity": "enforcement"` note in the evidence), not only through
+  `_meta.polarity`: in these rows `VERIFIED` means *the property held*
+  (the attempt was blocked) and `REFUTED` means *the escape succeeded*
+  — the opposite reading from the leak tree. The disambiguation
+  attaches to the verdict, the same principle as `*_reason`, so a
+  reader who has only seen the leak tree is not misled.
 
 ## Requirements
 

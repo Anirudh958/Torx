@@ -123,11 +123,22 @@ the enforcement domain (`setns` back to init netns). These are the
 escape vectors we could enumerate; they are not proven exhaustive.
 Vectors *not* tested include: (a) exhausting kernel resources so that
 nftables or BPF silently fail to enforce, (b) racing the launcher
-between netns creation and rule application, (c) a kernel bug in
-netfilter or BPF that bypasses the ruleset. Each is out of scope for
-this artifact because each requires either root or a kernel 0-day; the
-scope claim is "escape from an unprivileged wrapped process via the
-three named mechanisms is blocked," not "escape is impossible."
+between netns creation and rule application, and (c) a kernel bug in
+netfilter or BPF that bypasses the ruleset — three different kinds of
+exclusion, each with a different home. (a) is a denial concern, not an
+escape: the boundary still holds, enforcement merely stops working, so
+the claim "the app escaped" was never at issue; (c) is A5's territory
+(§6) — a kernel 0-day, excluded with root by fiat. (b) does *not* need
+root: the app controls its own timing. It is excluded for a different
+reason — the ordering guarantee removes the window by construction
+rather than by blocking an attempt: the rules are installed *before*
+`exec` and §4.1 aborts the launch if they don't apply, so a child that
+runs at all was launched against an installed ruleset. That argument
+is asserted, not raced: no row exercises the window, and `boundary.up`
+observes only the settled post-launch state — if a timing test for it
+is ever written it is its own family, not a `disable.*` row. The scope
+claim is "escape from an unprivileged wrapped process via the three
+named mechanisms is blocked," not "escape is impossible."
 
 `tests/isolation/` (`enforcement.md` §3 mechanism 6, §4.3) stays a
 separate, later harness — circuit non-sharing is a different question
