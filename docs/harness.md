@@ -107,6 +107,28 @@ then needs its paired positive control — same path class, directed at
 Tor — so green becomes "blocked the escape, carried the legitimate
 traffic."
 
+**`disable.*` is scoped and capability-aware before its first probe
+lands** — the rows implement this claim, not the other way around (the
+same move as `THREAT_MODEL.md` before `torx.c`). *Capability
+prerequisite:* each probe runs inside the namespace as the wrapped uid,
+with that process's real capability set, and its evidence records
+`capeff` (the effective set at probe time), `cap_required` (the
+capabilities the operation would need to succeed — documented per
+probe, not inferred), and `cap_gap` (the difference, or `none` if the
+present set would have sufficed), so a `REFUTED` is unambiguous: the
+operation succeeded, and the gap names the capability that allowed it.
+*Scope:* P1 is tested by three mechanisms — removing the enforcement
+(`nft flush ruleset`), detaching the sensor (BPF detach), and leaving
+the enforcement domain (`setns` back to init netns). These are the
+escape vectors we could enumerate; they are not proven exhaustive.
+Vectors *not* tested include: (a) exhausting kernel resources so that
+nftables or BPF silently fail to enforce, (b) racing the launcher
+between netns creation and rule application, (c) a kernel bug in
+netfilter or BPF that bypasses the ruleset. Each is out of scope for
+this artifact because each requires either root or a kernel 0-day; the
+scope claim is "escape from an unprivileged wrapped process via the
+three named mechanisms is blocked," not "escape is impossible."
+
 `tests/isolation/` (`enforcement.md` §3 mechanism 6, §4.3) stays a
 separate, later harness — circuit non-sharing is a different question
 from egress.

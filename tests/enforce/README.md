@@ -42,6 +42,10 @@ Exit codes: `0` all `ci_gate` rows match their documented verdict ·
 holds `null` without its sibling `*_reason`, see
 [`SCHEMA.md`](SCHEMA.md)) · `2` setup error (jq missing).
 
+`--static` is hermetic: it reads only committed files. If a future row
+needs generated input, that input must be committed or the row must not
+be `ci_gate: true`.
+
 If the host cannot build a boundary, dynamic rows **degrade to
 `UNTESTED (reason:)` and the run still exits 0** — a dead or
 half-configured host is never mistaken for a working boundary
@@ -162,6 +166,29 @@ fresh row is a defect in the document, not evidence.
 4. Reference the doc anchor that evidences the obligation (`limitation_ref`).
 5. Re-run and commit the regenerated `results.jsonl` / `results.md`
    together with the doc change.
+
+## `probes/` — planned shape (before the first probe)
+
+Conventions fixed *before* the first `disable.*` probe lands, so the
+rows implement the scoped claim (`docs/harness.md` §3):
+
+- **Naming:** `probe_<name>.c` produces rows named `disable.<name>`
+  (`probe_nft_flush.c` → `disable.nft_flush`).
+- **Position and privilege:** the probe runs *inside* the namespace, as
+  the wrapped uid, with the same capability set the wrapped process
+  runs with — so a `REFUTED` means "an equivalent process could
+  escape," and the recorded `capeff` / `cap_required` / `cap_gap`
+  (harness §3) says exactly which capability made the difference.
+- **Report path:** the probe returns its result via a file, a pipe, or
+  its exit code — the mechanism is part of the child's IPC surface, the
+  same surface `signal.no_shared_fds` audits: a fifth `pipe2` without
+  `CLOEXEC` trips the static row, and the two rows catching each other
+  is the design working.
+- **Positive control:** a `disable.*` probe that only ever fails would
+  pass trivially. Each probe carries a variant of the same code path
+  *with* the capability that *does* succeed, so evidence shows both
+  outcomes — otherwise the row is a claim about a probe that might be
+  broken.
 
 ## Requirements
 
