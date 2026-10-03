@@ -206,6 +206,18 @@ rows implement the scoped claim (`docs/harness.md` §3):
 - **Usage output:** a probe is a program — `--help`/usage is
   mandatory, so a reviewer who clones the artifact can build it, run
   it, and understand what it attempts without reading the harness.
+- **Exact operation in evidence:** the evidence records the operation
+  the probe actually attempted — the command line or the netlink
+  message, not a paraphrase of it. A verdict is only as strong as the
+  operation it names: a row that says "flushes the ruleset" while the
+  probe flushed a table is the same failure as a doc referencing a row
+  that never existed — a claim that survives because it looks
+  structurally sound.
+- **Exit codes are the ABI:** outcomes map to documented exit codes
+  (`EPERM` → a specific code, success → another) and the mapping is
+  stated in `--help`, so the harness reads the return value instead of
+  parsing stderr or inspecting `errno` after the fork. The first
+  probe sets the convention every later probe's row will parse.
 
 ## Requirements
 
