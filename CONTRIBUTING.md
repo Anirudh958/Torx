@@ -35,6 +35,10 @@
 
 - Push over SSH: `git push git@github.com:Anirudh958/Torx.git main`
   (https push does not authenticate).
+- After a push, `git fetch` before trusting any ahead/behind
+  indicator: the tracking ref updates on fetch, not on push, so a
+  stale "ahead" can hide a real sync state. Verify the state, don't
+  infer it.
 - Verify CI against the **full** sha, never the abbreviation — an
   ambiguous reference is exactly the failure this check exists to
   prevent, and it recurs.
