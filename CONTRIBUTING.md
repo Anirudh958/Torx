@@ -7,7 +7,11 @@
    `./tests/leak/run.sh --static` and `./tests/enforce/run.sh --static`
    for harness changes; the full battery for row or mode changes (see
    each harness's README). A docs-only change still re-runs the
-   static harness — hermeticity claims are tested by exercising them.
+   static harness — hermeticity claims are tested by exercising them,
+   and "docs-only, it can't affect the harness" is the shortcut that
+   hides exactly the case no gate checks: a doc that no longer
+   matches the rows it claims to summarize. No harness scans docs
+   against results; this habit is the defense.
 2. **Read the diff, not the file.** The file is the intended state; the
    diff is the change. Bugs live in the delta between them — a forced
    line break, an eaten blank line, a table row that an edit dropped.
@@ -15,7 +19,10 @@
    the edit itself did not intend.
 3. **Fix by adding a commit, never amending.** Corrections are logged,
    not rewritten: a wrong landing gets a follow-up commit whose message
-   names what it corrects.
+   names what it corrects. The reason is the artifact's thesis, not
+   style — the corrections *are* the record of what was wrong and when,
+   and `git commit --amend` plus a force-push deletes the append-only
+   evidence trail the method rests on.
 
 ## Commit messages
 

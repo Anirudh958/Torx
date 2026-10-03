@@ -196,6 +196,16 @@ rows implement the scoped claim (`docs/harness.md` §3):
   — the opposite reading from the leak tree. The disambiguation
   attaches to the verdict, the same principle as `*_reason`, so a
   reader who has only seen the leak tree is not misled.
+- **Build output:** compiled probes live in `.build/` (already
+  gitignored), never beside the source — `make clean` nukes it
+  uniformly and `probes/` stays source-only.
+- **Compiled by `make`, checked by `make check`:** each probe builds as
+  part of `make` and `make check` asserts every probe compiles cleanly,
+  so a compile error fails the static gate instead of surfacing at the
+  first `--dynamic` run.
+- **Usage output:** a probe is a program — `--help`/usage is
+  mandatory, so a reviewer who clones the artifact can build it, run
+  it, and understand what it attempts without reading the harness.
 
 ## Requirements
 
